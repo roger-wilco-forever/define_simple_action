@@ -19,6 +19,10 @@ module DefineSimpleAction
 
       PAGE_LENGTH = 100
 
+      def self.call(params)
+        new(**params).execute(params[:params])
+      end
+
       def call(params)
         yield(validate_params(params))
         @service_params = params
