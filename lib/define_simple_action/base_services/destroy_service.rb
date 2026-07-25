@@ -5,12 +5,13 @@ module DefineSimpleAction
     class DestroyService < BaseService
       def execute(params)
         resource = destroy_resource(params)
-        delete_action = soft_delete?(resource.class) ? :discard : :destroy
+        delete_action = call_hook(:soft_delete?, resource.class) ? :discard : :destroy
 
         if destroy_resource(params).public_send(delete_action)
           Success(resource)
         else
-          Failure(invalid_record_error(destroy_resource(params)))
+          record = destroy_resource(params)
+          Failure(call_hook(:invalid_record_error, record) || { errors: record.errors.messages })
         end
       end
 

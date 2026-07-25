@@ -5,7 +5,7 @@ module DefineSimpleAction
     class BatchDestroyService < BaseService
       def execute(params)
         destroy_resource(params).fmap do |result|
-          after_mutation(model.name)
+          call_hook(:after_mutation, model.name)
 
           result
         end
@@ -38,11 +38,11 @@ module DefineSimpleAction
       end
 
       def failure_message(errors)
-        Failure(batch_destroy_error(errors))
+        Failure(call_hook(:batch_destroy_error, errors) || { errors: })
       end
 
       def method_for_delete
-        soft_delete?(model) ? :discard_all : :destroy_all
+        call_hook(:soft_delete?, model) ? :discard_all : :destroy_all
       end
 
       def not_destroyed

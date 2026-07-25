@@ -103,17 +103,21 @@ RSpec.describe "DefineSimpleAction::BaseServices" do
       expect(calls).to be_empty
     end
 
-    it "raises NotImplementedError from the default #captcha_verify hook" do
+    it "#call_hook returns nil for a hook the host never defined (no stub declared in the gem)" do
       service = service_class.new(model: "Widget")
 
-      expect { service.send(:captcha_verify, {}) }.to raise_error(NotImplementedError)
+      expect(service.send(:call_hook, :soft_delete?, record_class)).to be_nil
+      expect(service.send(:call_hook, :after_mutation, "Widget")).to be_nil
+      expect(service.class.private_method_defined?(:soft_delete?)).to eq(false)
+      expect(service.class.private_method_defined?(:after_mutation)).to eq(false)
     end
 
-    it "defaults soft_delete? to false and after_mutation to a no-op" do
-      service = service_class.new(model: "Widget")
+    it "#call_hook dispatches to whatever method the host defines under that name" do
+      klass = Class.new(service_class) do
+        define_method(:soft_delete?) { |_model_class| true }
+      end
 
-      expect(service.send(:soft_delete?, record_class)).to eq(false)
-      expect(service.send(:after_mutation, "Widget")).to be_nil
+      expect(klass.new(model: "Widget").send(:call_hook, :soft_delete?, record_class)).to eq(true)
     end
 
     it "raises when no validation contract can be resolved by naming convention" do

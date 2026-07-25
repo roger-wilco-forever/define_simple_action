@@ -13,8 +13,10 @@ module DefineSimpleAction
 
         resource = yield(transform_result(resource))
 
+        response_class = call_hook(:index_response_class) || ::DefineSimpleAction::BaseServices::Responses::IndexResponse
+
         Success(
-          index_response_class.new(
+          response_class.new(
             data: resource,
             meta: {
               count:,
@@ -27,18 +29,6 @@ module DefineSimpleAction
 
       private
 
-      # Резолвится Ransack'ом как auth_object при вызове #ransack — реализация,
-      # завязанная на конкретный класс админ-пользователя, должна жить в хосте.
-      def auth_object
-        nil
-      end
-
-      # Хост может переопределить, если ему нужен свой класс ответа (например, чтобы
-      # сохранить is_a?-проверки/подклассы, уже завязанные на его собственный класс).
-      def index_response_class
-        ::DefineSimpleAction::BaseServices::Responses::IndexResponse
-      end
-
       def limit_and_offset(params)
         limitless = ActiveModel::Type::Boolean.new.cast(params[:limitless])
         limit = limitless ? nil : (params[:limit] || self.class::PAGE_LENGTH).to_i
@@ -47,7 +37,9 @@ module DefineSimpleAction
       end
 
       def prepare_query(params)
-        scope(params).ransack(params[:q], auth_object:).result
+        # auth_object резолвится Ransack'ом при вызове #ransack — реализация, завязанная
+        # на конкретный класс админ-пользователя, должна жить в хосте (если вообще нужна).
+        scope(params).ransack(params[:q], auth_object: call_hook(:auth_object)).result
       end
 
       def select_fields

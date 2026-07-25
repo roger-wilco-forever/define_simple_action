@@ -7,13 +7,13 @@ module DefineSimpleAction
         resource = model.find(params[:id])
 
         if update_resource(resource, params)
-          after_mutation(model.name)
+          call_hook(:after_mutation, model.name)
           Success(resource)
         else
-          Failure(invalid_record_error(resource))
+          Failure(call_hook(:invalid_record_error, resource) || { errors: resource.errors.messages })
         end
       rescue ActiveRecord::InvalidForeignKey => e
-        Failure(foreign_key_error(e))
+        Failure(call_hook(:foreign_key_error, e) || { error: e.message })
       end
 
       protected

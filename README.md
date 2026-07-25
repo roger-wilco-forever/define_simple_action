@@ -96,6 +96,55 @@ Result/dry-monads: `Success`/`Failure`).
 - `prefix` - переопределяется константой `PREFIX` в контроллере, иначе берётся из
   имени класса.
 
+## BaseServices
+
+`DefineSimpleAction::BaseServices` — сервисный слой, под который резолвит `fetch_service_for_action`:
+`Index`, `Show`, `ShowBySlug`, `Create`, `Update`, `Destroy`, `BatchDestroyService`, плюс общий
+`BaseService` (dry-monads/dry-initializer, резолвинг validation-контракта по имени класса).
+
+```ruby
+class BrandsController::IndexService < DefineSimpleAction::BaseServices::IndexService
+end
+```
+
+### Хуки — динамические, не декларируются в gem'е
+
+В отличие от `authorization_data`/`serialize_for_action` в `Concern` (обязательные, с
+`NotImplementedError` по умолчанию), хуки `BaseServices` **не существуют как методы**, пока
+хост их не определит. Внутри gem'а на каждой точке расширения вызывается:
+
+```ruby
+call_hook(:some_hook_name, *args) # => __send__(:some_hook_name, *args), если respond_to?, иначе nil
+```
+
+а конкретное поведение по умолчанию подставляется на месте вызова через `||`. Хост создаёт
+только те хуки, которые ему реально нужны в его ситуации — ничего не обязательно
+переопределять заранее и нечего "затирать" пустой реализацией.
+
+Используемые имена (вызываются, если определены; иначе — нейтральный дефолт inline):
+
+- `contract_validation_error(dry_validation_result)` — ошибка невалидных params (дефолт: `{ errors: ... }`)
+- `invalid_record_error(record)` — ошибка `record.errors` при create/update/destroy (дефолт: `{ errors: record.errors.messages }`)
+- `foreign_key_error(exception)` / `unexpected_error(exception)` — ошибки исключений в create/update (дефолт: `{ error: exception.message }`)
+- `batch_destroy_error(errors)` — ошибка batch_destroy (дефолт: `{ errors: }`)
+- `after_mutation(model_name)` — вызывается после успешного create/update/batch_destroy (дефолт: ничего)
+- `soft_delete?(model_class)` — discard vs destroy в destroy/batch_destroy (дефолт: `false`, всегда hard delete)
+- `auth_object` — передаётся в Ransack при `#ransack(q, auth_object:)` в IndexService (дефолт: `nil`)
+- `index_response_class` — класс, которым оборачивается `{data:, meta:}` в IndexService (дефолт: `DefineSimpleAction::BaseServices::Responses::IndexResponse`) — переопределите, если у вас уже есть `is_a?`-проверки/подклассы, завязанные на свой класс
+- `notify(resource)` — вызывается после call, если `notify_data[:watch_keys]` непусто
+
+Ничего из этого не обязательно определять: если хук не нужен в конкретном сервисе — просто
+не создавайте метод с этим именем, `call_hook` вернёт `nil`, и сработает дефолт.
+
+### Опасность бок о бок с Dry::Monads[:do]
+
+`BaseService` подключает `Dry::Monads[:do]`, который **автоматически оборачивает в do-нотацию
+каждый метод класса** (а не только `execute`/`call`). Внутри такого обёрнутого метода `yield`
+и `block_given?` перехватываются do-machinery (которая ждёт монаду и вызывает `.to_monad` на
+результате), а не блоком вызывающего — даже если вызывающий не передавал блок вовсе. Поэтому
+`call_hook` **намеренно не принимает default-блок** (`{ ... }`/`&block`) — дефолт всегда
+подставляется через `||` на месте вызова, а не через `yield` внутри `call_hook`.
+
 ## Development
 
 ```bash

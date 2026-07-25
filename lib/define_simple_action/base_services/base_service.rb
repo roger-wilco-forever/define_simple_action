@@ -7,7 +7,9 @@ module DefineSimpleAction
     # validation_contract_name:), валидирует params через dry-validation контракт
     # (резолвится по имени класса) и вызывает #execute.
     #
-    # Ошибки, кэш, soft-delete и капча — точки расширения (хуки), см. README.
+    # Хуки (форматы ошибок, инвалидация кэша, soft-delete-конвенция и т.д.) в gem'е
+    # не декларируются — см. #call_hook. Хост определяет только те, что ему реально
+    # нужны, под любым именем, которое ожидает точка вызова (см. README).
     class BaseService
       include Dry::Monads[:do, :maybe, :result, :try]
       extend Dry::Initializer
@@ -28,7 +30,7 @@ module DefineSimpleAction
         @service_params = params
 
         execute(**params).fmap do |result|
-          notify(result) if notify_data&.dig(:watch_keys)&.any?
+          call_hook(:notify, result) if notify_data&.dig(:watch_keys)&.any?
           result
         end
       end
@@ -40,48 +42,27 @@ module DefineSimpleAction
       def validate_params(params)
         contract.new.call(params)
                 .to_monad
-                .or { |error| Failure(contract_validation_error(error)) }
+                .or { |error| Failure(call_hook(:contract_validation_error, error) || { errors: error.errors.to_h }) }
       end
 
       protected
 
       attr_reader :service_params
 
-      # === Хуки ===
-
-      def after_mutation(model_name); end
-
-      def batch_destroy_error(errors)
-        { errors: }
+      # Вызывает метод <tt>name</tt>, если хост его определил (под любым именем,
+      # которое ожидает конкретная точка вызова — contract_validation_error,
+      # invalid_record_error, foreign_key_error, unexpected_error, batch_destroy_error,
+      # after_mutation, soft_delete?, notify, ...), иначе возвращает nil — дефолт
+      # подставляется на месте вызова через <tt>||</tt>. Ни один из этих хуков не
+      # декларируется в gem'е как метод: хост создаёт только то, что ему нужно.
+      #
+      # ВАЖНО: сюда специально не завели blockдефолт (<tt>yield</tt>/<tt>&block</tt>) —
+      # класс подключает Dry::Monads[:do], который автоматически оборачивает КАЖДЫЙ
+      # метод класса в do-нотацию; внутри такого метода "yield"/"block_given?"
+      # перехватывается do-machinery (ожидающей монаду), а не блоком вызывающего.
+      def call_hook(name, *args)
+        __send__(name, *args) if respond_to?(name, true)
       end
-
-      def captcha_verify(_params)
-        raise NotImplementedError, "#{self.class} must implement #captcha_verify"
-      end
-
-      def contract_validation_error(validation_result)
-        { errors: validation_result.errors.to_h }
-      end
-
-      def foreign_key_error(exception)
-        { error: exception.message }
-      end
-
-      def invalid_record_error(record)
-        { errors: record.errors.messages }
-      end
-
-      def soft_delete?(_model_class)
-        false
-      end
-
-      def unexpected_error(exception)
-        { error: exception.message }
-      end
-
-      def notify(resource); end
-
-      # === Общая логика ===
 
       def contract
         validation_contract = validation_contract_name&.safe_constantize
