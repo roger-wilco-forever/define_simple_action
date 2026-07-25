@@ -14,7 +14,7 @@ module DefineSimpleAction
         resource = yield(transform_result(resource))
 
         Success(
-          ::DefineSimpleAction::BaseServices::Responses::IndexResponse.new(
+          index_response_class.new(
             data: resource,
             meta: {
               count:,
@@ -31,6 +31,12 @@ module DefineSimpleAction
       # завязанная на конкретный класс админ-пользователя, должна жить в хосте.
       def auth_object
         nil
+      end
+
+      # Хост может переопределить, если ему нужен свой класс ответа (например, чтобы
+      # сохранить is_a?-проверки/подклассы, уже завязанные на его собственный класс).
+      def index_response_class
+        ::DefineSimpleAction::BaseServices::Responses::IndexResponse
       end
 
       def limit_and_offset(params)

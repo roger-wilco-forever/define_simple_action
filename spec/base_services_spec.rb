@@ -381,5 +381,21 @@ RSpec.describe "DefineSimpleAction::BaseServices" do
       expect(response.meta.limit).to eq(2)
       expect(response.meta.offset).to eq(0)
     end
+
+    it "lets a host override #index_response_class to preserve its own type/is_a? checks" do
+      custom_response_class = Class.new(DefineSimpleAction::BaseServices::Responses::IndexResponse)
+      relation = relation_class.new(%w[a])
+      contract = passing_contract_class
+
+      klass = Class.new(described_class) do
+        define_method(:contract) { contract }
+        define_method(:scope) { |_params| relation }
+        define_method(:index_response_class) { custom_response_class }
+      end
+
+      result = klass.new(model: record_class).call(limit: 1, offset: 0, q: {})
+
+      expect(result.value!).to be_a(custom_response_class)
+    end
   end
 end
