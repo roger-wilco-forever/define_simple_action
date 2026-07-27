@@ -145,6 +145,27 @@ call_hook(:some_hook_name, *args) # => __send__(:some_hook_name, *args), есл�
 `call_hook` **намеренно не принимает default-блок** (`{ ... }`/`&block`) — дефолт всегда
 подставляется через `||` на месте вызова, а не через `yield` внутри `call_hook`.
 
+## Зависимости
+
+Gem не зависит от Rails/ActiveSupport/ActiveRecord — только dry-rb (`dry-monads`,
+`dry-initializer`, `dry-types`, `dry-inflector`):
+
+- `camelize`/`underscore` — `Dry::Inflector`, а не `ActiveSupport::Inflector`.
+- `constantize`/`safe_constantize` — свои, `DefineSimpleAction.constantize`/`.safe_constantize`
+  (обёртка над `Object#const_get`), а не ActiveSupport-монкипатч `String#constantize`.
+- `deep_symbolize_keys` — свой хелпер в `Concern`, без `Hash#deep_symbolize_keys`.
+- `ActiveModel::Type::Boolean` — своя реализация того же списка "ложных" значений
+  (`IndexService::FALSE_VALUES`).
+- `ActiveRecord`/`ransack`/`discard` — **опциональные интеграции хоста, не зависимости gem'а**.
+  `IndexService` дефолтно вызывает `#ransack` на `scope`, а `Create/Update/BatchDestroyService`
+  проверяют классы исключений (`ActiveRecord::InvalidForeignKey` и т.д.) через
+  `DefineSimpleAction.safe_constantize` в рантайме (`BaseService#optional_error?`) — если хост
+  их не подключил, соответствующая ветка просто не сработает, а не `NameError` при загрузке gem'а.
+
+`Concern` (контроллерный слой) остаётся Rails-специфичным по своей природе — он подмешивается
+в `ActionController` и использует `params`/`request`/`render`/`respond_to` напрямую; это не
+то, что имеет смысл абстрагировать.
+
 ## Development
 
 ```bash

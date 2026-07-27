@@ -19,12 +19,11 @@ module DefineSimpleAction
         return failure_message(errors) if errors.any?
 
         Success(@destroyed)
-      rescue ActiveRecord::RecordNotDestroyed => e
-        failure_message(e.errors)
       rescue StandardError => e
-        # discard — опциональная зависимость хоста, а не gem'а: проверяем её наличие
-        # в рантайме, чтобы не тянуть жёсткую зависимость ради одного класса исключения.
-        raise unless defined?(::Discard::RecordNotDiscarded) && e.is_a?(::Discard::RecordNotDiscarded)
+        # ActiveRecord и discard — не зависимости gem'а, а опциональные интеграции хоста
+        # (см. #optional_error? в BaseService). Проверяем их наличие в рантайме, а не
+        # через явный rescue по классу, чтобы не тянуть жёсткие зависимости.
+        raise unless optional_error?(e, 'ActiveRecord::RecordNotDestroyed') || optional_error?(e, 'Discard::RecordNotDiscarded')
 
         failure_message(e.errors)
       end

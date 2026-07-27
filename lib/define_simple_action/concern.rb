@@ -135,7 +135,7 @@ module DefineSimpleAction
     # === Механизм диспетчеризации ===
 
     def define_simple_action(name, model_name, response_formats, notify_data, use_cache, cache_expires_in) # rubocop:disable Metrics/ParameterLists
-      return head :not_acceptable if response_formats.exclude?(request.format.symbol)
+      return head :not_acceptable unless response_formats.include?(request.format.symbol)
 
       service_params = fetch_params_for_action(name)
 
@@ -187,17 +187,19 @@ module DefineSimpleAction
 
       service_params = {
         authorization_data:,
-        model: model_name.is_a?(String) ? model_name.constantize : model_name,
+        model: model_name.is_a?(String) ? ::DefineSimpleAction.constantize(model_name) : model_name,
         notify_data:,
         validation_contract_name: fetch_validation_contract_name_for_action(name)
       }.compact
 
+      camelized_name = ::DefineSimpleAction::INFLECTOR.camelize(name)
+
       begin
-        "#{prefix}::#{name.camelize}Service".constantize.new(**service_params)
+        ::DefineSimpleAction.constantize("#{prefix}::#{camelized_name}Service").new(**service_params)
       rescue NameError
         raise unless fallback_service_namespace
 
-        "#{fallback_service_namespace}::#{name.camelize}Service".constantize.new(**service_params)
+        ::DefineSimpleAction.constantize("#{fallback_service_namespace}::#{camelized_name}Service").new(**service_params)
       end
     end
 
@@ -239,7 +241,7 @@ module DefineSimpleAction
 
     def compacted_ransack_params(params)
       ransack_params = (params[:q] || {}).to_enum&.to_h
-      ransack_params&.deep_symbolize_keys&.compact
+      deep_symbolize_keys(ransack_params)&.compact
     end
 
     def resource_batch_destroy_params
@@ -268,7 +270,7 @@ module DefineSimpleAction
 
     def resource_show_by_slug_params
       {
-        q: params[:q]&.to_unsafe_h&.deep_symbolize_keys,
+        q: deep_symbolize_keys(params[:q]&.to_unsafe_h),
         slug: params[:slug]
       }.compact
     end
@@ -276,12 +278,25 @@ module DefineSimpleAction
     def resource_show_params
       {
         id: Integer(params[:id]),
-        q: params[:q]&.to_unsafe_h&.deep_symbolize_keys
+        q: deep_symbolize_keys(params[:q]&.to_unsafe_h)
       }.compact
     end
 
     def resource_update_params
       resource_params.merge(id: Integer(params[:id]))
+    end
+
+    # Замена ActiveSupport Hash#deep_symbolize_keys, чтобы не тянуть activesupport
+    # ради одного метода.
+    def deep_symbolize_keys(value)
+      case value
+      when Hash
+        value.each_with_object({}) { |(k, v), h| h[k.to_sym] = deep_symbolize_keys(v) }
+      when Array
+        value.map { |v| deep_symbolize_keys(v) }
+      else
+        value
+      end
     end
 
     def self.included(klass)

@@ -65,9 +65,9 @@ module DefineSimpleAction
       end
 
       def contract
-        validation_contract = validation_contract_name&.safe_constantize
-        validation_contract ||= self.class.to_s.gsub(/Service\z/, 'Contract').safe_constantize
-        validation_contract ||= self.class.superclass.name.gsub(/Service\z/, 'Contract').safe_constantize
+        validation_contract = validation_contract_name && ::DefineSimpleAction.safe_constantize(validation_contract_name)
+        validation_contract ||= ::DefineSimpleAction.safe_constantize(self.class.to_s.gsub(/Service\z/, 'Contract'))
+        validation_contract ||= ::DefineSimpleAction.safe_constantize(self.class.superclass.name.gsub(/Service\z/, 'Contract'))
 
         if validation_contract.nil?
           raise(NotImplementedError, "Validation contract not found for #{self.class} " \
@@ -89,6 +89,14 @@ module DefineSimpleAction
 
       def transform_result(result)
         Success(result)
+      end
+
+      # Проверка "exception — экземпляр класса с этим полным именем, если такой класс
+      # вообще определён в рантайме". ActiveRecord/discard — не зависимости gem'а, а
+      # опциональные интеграции хоста: если их нет — просто false, exception летит дальше.
+      def optional_error?(exception, full_class_name)
+        klass = ::DefineSimpleAction.safe_constantize(full_class_name)
+        klass && exception.is_a?(klass)
       end
     end
   end

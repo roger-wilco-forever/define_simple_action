@@ -3,6 +3,9 @@
 module DefineSimpleAction
   module BaseServices
     class IndexService < BaseService
+      # Аналог ActiveModel::Type::Boolean::FALSE_VALUES — без зависимости от activemodel.
+      FALSE_VALUES = [false, 0, '0', 'f', 'F', 'false', 'FALSE', 'off', 'OFF', ''].freeze
+
       def execute(params = {})
         limitless, limit, offset = limit_and_offset(params)
 
@@ -29,8 +32,14 @@ module DefineSimpleAction
 
       private
 
+      def cast_boolean(value)
+        return nil if value.nil?
+
+        !FALSE_VALUES.include?(value)
+      end
+
       def limit_and_offset(params)
-        limitless = ActiveModel::Type::Boolean.new.cast(params[:limitless])
+        limitless = cast_boolean(params[:limitless])
         limit = limitless ? nil : (params[:limit] || self.class::PAGE_LENGTH).to_i
         offset = params[:offset].to_i
         [limitless, limit, offset]

@@ -31,20 +31,14 @@ Gem::Specification.new do |spec|
   spec.executables = spec.files.grep(%r{\Aexe/}) { |f| File.basename(f) }
   spec.require_paths = ['lib']
 
-  # Используем camelize/constantize/deep_symbolize_keys/exclude? — конвенции резолвинга
-  # завязаны на них. В хост-приложении (Rails) ActiveSupport и так есть, но объявляем
-  # зависимость явно, а не полагаемся на порядок загрузки.
-  spec.add_dependency 'activemodel', '>= 6.1', '< 9'
-  # BaseServices: Create/UpdateService явно ловят ActiveRecord::InvalidForeignKey — это
-  # уже не опциональная зависимость (в отличие от discard, см. batch_destroy_service.rb).
-  spec.add_dependency 'activerecord', '>= 6.1', '< 9'
-  spec.add_dependency 'activesupport', '>= 6.1', '< 9'
-  # BaseServices: dry-monads/dry-initializer/dry-types — плюмбинг сервисного слоя,
-  # ransack — фильтрация в IndexService по умолчанию.
+  # Никакой Rails/ActiveSupport-зависимости: camelize/underscore — dry-inflector,
+  # constantize — Object#const_get (см. DefineSimpleAction.constantize), plumbing
+  # BaseServices — dry-monads/dry-initializer/dry-types. ActiveRecord/ransack/discard —
+  # опциональные интеграции хоста, а не зависимости gem'а (см. base_services.rb).
+  spec.add_dependency 'dry-inflector', '~> 1.0'
   spec.add_dependency 'dry-initializer', '~> 3.0'
   spec.add_dependency 'dry-monads', '~> 1.0'
   spec.add_dependency 'dry-types', '~> 1.0'
-  spec.add_dependency 'ransack', '>= 3.0', '< 5'
 
   # For more information and examples about making a new gem, check out our
   # guide at: https://bundler.io/guides/creating_gem.html

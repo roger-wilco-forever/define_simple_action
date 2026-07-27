@@ -175,7 +175,8 @@ RSpec.describe "DefineSimpleAction::BaseServices" do
       expect(result).to be_failure
     end
 
-    it "wraps ActiveRecord::InvalidForeignKey via #foreign_key_error" do
+    it "wraps ActiveRecord::InvalidForeignKey via #foreign_key_error (an optional integration, not a gem dependency)" do
+      stub_const("ActiveRecord::InvalidForeignKey", Class.new(StandardError))
       raising_class = Class.new(record_class) do
         def initialize(*)
           super
@@ -188,6 +189,21 @@ RSpec.describe "DefineSimpleAction::BaseServices" do
 
       expect(result).to be_failure
       expect(result.failure).to eq(error: "boom")
+    end
+
+    it "does not require ActiveRecord to be loaded: a plain StandardError becomes #unexpected_error" do
+      raising_class = Class.new(record_class) do
+        def initialize(*)
+          super
+          raise "plain old error"
+        end
+      end
+      klass = Class.new(service_class) { define_method(:scope) { raising_class } }
+
+      result = klass.new(model: record_class).call(title: "Foo")
+
+      expect(result).to be_failure
+      expect(result.failure).to eq(error: "plain old error")
     end
   end
 

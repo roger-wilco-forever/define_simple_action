@@ -3,9 +3,12 @@
 require "dry/monads"
 require "dry/initializer"
 require "dry/types"
-require "active_model"
-require "active_record"
-require "ransack"
+
+# ActiveRecord/ransack/discard НЕ требуются gem'ом — это опциональные интеграции хоста.
+# Дефолтный IndexService ожидает от model/scope AR-подобный интерфейс (#ransack, #limit,
+# #offset, #select, #size), а Create/Update/BatchDestroyService duck-type-проверяют
+# конкретные классы исключений через DefineSimpleAction.safe_constantize в рантайме
+# (см. BaseService#optional_error?) — без require и без записи в gemspec-зависимости.
 
 require_relative "base_services/responses/index_response"
 require_relative "base_services/base_service"
