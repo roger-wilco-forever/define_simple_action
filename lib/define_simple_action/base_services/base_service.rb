@@ -90,14 +90,6 @@ module DefineSimpleAction
       def transform_result(result)
         Success(result)
       end
-
-      # Проверка "exception — экземпляр класса с этим полным именем, если такой класс
-      # вообще определён в рантайме". ActiveRecord/discard — не зависимости gem'а, а
-      # опциональные интеграции хоста: если их нет — просто false, exception летит дальше.
-      def optional_error?(exception, full_class_name)
-        klass = ::DefineSimpleAction.safe_constantize(full_class_name)
-        klass && exception.is_a?(klass)
-      end
     end
   end
 end

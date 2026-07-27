@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require 'dry/inflector'
+require 'dry/transformer'
 
 require_relative 'define_simple_action/version'
 

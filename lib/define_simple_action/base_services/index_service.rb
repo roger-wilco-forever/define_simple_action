@@ -3,9 +3,6 @@
 module DefineSimpleAction
   module BaseServices
     class IndexService < BaseService
-      # Аналог ActiveModel::Type::Boolean::FALSE_VALUES — без зависимости от activemodel.
-      FALSE_VALUES = [false, 0, '0', 'f', 'F', 'false', 'FALSE', 'off', 'OFF', ''].freeze
-
       def execute(params = {})
         limitless, limit, offset = limit_and_offset(params)
 
@@ -33,9 +30,11 @@ module DefineSimpleAction
       private
 
       def cast_boolean(value)
-        return nil if value.nil?
+        return false if value.nil?
 
-        !FALSE_VALUES.include?(value)
+        ::Dry::Transformer::Coercions.to_boolean(value)
+      rescue KeyError
+        false
       end
 
       def limit_and_offset(params)
@@ -45,10 +44,12 @@ module DefineSimpleAction
         [limitless, limit, offset]
       end
 
+      # Дефолт без фильтрации: gem не знает про Ransack. Хосту, которому нужна
+      # query-string фильтрация (q[title_cont]=... и т.д.), стоит либо переопределить
+      # этот метод в конкретном сервисе, либо примонкипатчить его на весь IndexService
+      # (см. README — "ActiveRecord/ransack/discard как монкипатч хоста").
       def prepare_query(params)
-        # auth_object резолвится Ransack'ом при вызове #ransack — реализация, завязанная
-        # на конкретный класс админ-пользователя, должна жить в хосте (если вообще нужна).
-        scope(params).ransack(params[:q], auth_object: call_hook(:auth_object)).result
+        scope(params)
       end
 
       def select_fields

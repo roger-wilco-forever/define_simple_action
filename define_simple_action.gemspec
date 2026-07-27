@@ -32,12 +32,14 @@ Gem::Specification.new do |spec|
   spec.require_paths = ['lib']
 
   # Никакой Rails/ActiveSupport-зависимости: camelize/underscore — dry-inflector,
-  # constantize — Object#const_get (см. DefineSimpleAction.constantize), plumbing
-  # BaseServices — dry-monads/dry-initializer/dry-types. ActiveRecord/ransack/discard —
-  # опциональные интеграции хоста, а не зависимости gem'а (см. base_services.rb).
+  # constantize — Object#const_get (см. DefineSimpleAction.constantize), deep_symbolize_keys/
+  # to_boolean — dry-transformer, plumbing BaseServices — dry-monads/dry-initializer/dry-types.
+  # ActiveRecord/ransack/discard — не зависимости и не duck-typed проверки в gem'е вообще:
+  # хост подключает их поведение сам (монкипатчем поверх классов gem'а), см. README.
   spec.add_dependency 'dry-inflector', '~> 1.0'
   spec.add_dependency 'dry-initializer', '~> 3.0'
   spec.add_dependency 'dry-monads', '~> 1.0'
+  spec.add_dependency 'dry-transformer', '~> 1.0'
   spec.add_dependency 'dry-types', '~> 1.0'
 
   # For more information and examples about making a new gem, check out our

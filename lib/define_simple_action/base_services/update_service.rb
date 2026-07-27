@@ -12,10 +12,6 @@ module DefineSimpleAction
         else
           Failure(call_hook(:invalid_record_error, resource) || { errors: resource.errors.messages })
         end
-      rescue StandardError => e
-        raise e unless optional_error?(e, 'ActiveRecord::InvalidForeignKey')
-
-        Failure(call_hook(:foreign_key_error, e) || { error: e.message })
       end
 
       protected

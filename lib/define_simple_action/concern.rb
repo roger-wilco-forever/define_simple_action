@@ -286,17 +286,12 @@ module DefineSimpleAction
       resource_params.merge(id: Integer(params[:id]))
     end
 
-    # Замена ActiveSupport Hash#deep_symbolize_keys, чтобы не тянуть activesupport
-    # ради одного метода.
+    # dry-transformer вместо ActiveSupport Hash#deep_symbolize_keys; сам метод не
+    # принимает nil, поэтому оборачиваем (params[:q] нередко отсутствует).
     def deep_symbolize_keys(value)
-      case value
-      when Hash
-        value.each_with_object({}) { |(k, v), h| h[k.to_sym] = deep_symbolize_keys(v) }
-      when Array
-        value.map { |v| deep_symbolize_keys(v) }
-      else
-        value
-      end
+      return value if value.nil?
+
+      ::Dry::Transformer::HashTransformations.deep_symbolize_keys(value)
     end
 
     def self.included(klass)

@@ -175,35 +175,17 @@ RSpec.describe "DefineSimpleAction::BaseServices" do
       expect(result).to be_failure
     end
 
-    it "wraps ActiveRecord::InvalidForeignKey via #foreign_key_error (an optional integration, not a gem dependency)" do
-      stub_const("ActiveRecord::InvalidForeignKey", Class.new(StandardError))
+    it "does not rescue exceptions raised from #create_resource — that's a host concern (see README, " \
+       "'ActiveRecord/ransack/discard как монкипатч хоста')" do
       raising_class = Class.new(record_class) do
         def initialize(*)
           super
-          raise ActiveRecord::InvalidForeignKey, "boom"
+          raise "boom"
         end
       end
       klass = Class.new(service_class) { define_method(:scope) { raising_class } }
 
-      result = klass.new(model: record_class).call(title: "Foo")
-
-      expect(result).to be_failure
-      expect(result.failure).to eq(error: "boom")
-    end
-
-    it "does not require ActiveRecord to be loaded: a plain StandardError becomes #unexpected_error" do
-      raising_class = Class.new(record_class) do
-        def initialize(*)
-          super
-          raise "plain old error"
-        end
-      end
-      klass = Class.new(service_class) { define_method(:scope) { raising_class } }
-
-      result = klass.new(model: record_class).call(title: "Foo")
-
-      expect(result).to be_failure
-      expect(result.failure).to eq(error: "plain old error")
+      expect { klass.new(model: record_class).call(title: "Foo") }.to raise_error("boom")
     end
   end
 
@@ -351,19 +333,12 @@ RSpec.describe "DefineSimpleAction::BaseServices" do
   end
 
   describe DefineSimpleAction::BaseServices::IndexService do
-    # Двойник ActiveRecord::Relation, чтобы не тянуть Ransack/БД в тесты gem'а.
+    # Двойник query-объекта (например, ActiveRecord::Relation), чтобы не тянуть БД
+    # в тесты gem'а. Без #ransack — дефолтный #prepare_query его больше не вызывает.
     let(:relation_class) do
       Class.new do
         def initialize(items)
           @items = items
-        end
-
-        def ransack(_q, auth_object:)
-          self
-        end
-
-        def result
-          self
         end
 
         def limit(n)
@@ -416,6 +391,41 @@ RSpec.describe "DefineSimpleAction::BaseServices" do
       result = klass.new(model: record_class).call(limit: 1, offset: 0, q: {})
 
       expect(result.value!).to be_a(custom_response_class)
+    end
+
+    it "#prepare_query defaults to plain #scope(params) — no Ransack call, that's a host concern" do
+      relation = relation_class.new(%w[a b])
+      contract = passing_contract_class
+
+      klass = Class.new(described_class) do
+        define_method(:contract) { contract }
+        define_method(:scope) { |_params| relation }
+      end
+      service = klass.new(model: record_class)
+
+      expect(service.send(:prepare_query, q: { title_cont: "x" })).to equal(relation)
+    end
+
+    describe "#cast_boolean (dry-transformer, no ActiveModel)" do
+      let(:service) { klass.new(model: record_class) }
+      let(:klass) do
+        contract = passing_contract_class
+        Class.new(described_class) { define_method(:contract) { contract } }
+      end
+
+      it "recognizes common truthy/falsy param values" do
+        expect(service.send(:cast_boolean, "true")).to eq(true)
+        expect(service.send(:cast_boolean, "1")).to eq(true)
+        expect(service.send(:cast_boolean, true)).to eq(true)
+        expect(service.send(:cast_boolean, "false")).to eq(false)
+        expect(service.send(:cast_boolean, "0")).to eq(false)
+        expect(service.send(:cast_boolean, false)).to eq(false)
+      end
+
+      it "treats nil and unrecognized values as false rather than raising" do
+        expect(service.send(:cast_boolean, nil)).to eq(false)
+        expect(service.send(:cast_boolean, "garbage")).to eq(false)
+      end
     end
   end
 end

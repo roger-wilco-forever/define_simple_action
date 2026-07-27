@@ -189,4 +189,22 @@ RSpec.describe DefineSimpleAction::Concern do
       )
     end
   end
+
+  describe "#resource_show_params / #resource_show_by_slug_params (dry-transformer deep_symbolize_keys)" do
+    it "deep-symbolizes q via dry-transformer when q is present" do
+      q = { "with_sites" => "true" }
+      q.define_singleton_method(:to_unsafe_h) { q }
+      controller = controller_class.new(params: { id: "1", q:, slug: "foo" })
+
+      expect(controller.resource_show_params).to eq(id: 1, q: { with_sites: "true" })
+      expect(controller.resource_show_by_slug_params).to eq(slug: "foo", q: { with_sites: "true" })
+    end
+
+    it "omits q rather than raising when it's absent (dry-transformer itself doesn't accept nil)" do
+      controller = controller_class.new(params: { id: "1", slug: "foo" })
+
+      expect(controller.resource_show_params).to eq(id: 1)
+      expect(controller.resource_show_by_slug_params).to eq(slug: "foo")
+    end
+  end
 end

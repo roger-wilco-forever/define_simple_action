@@ -5,14 +5,6 @@ module DefineSimpleAction
     class CreateService < BaseService
       def execute(params)
         create_resource(params).fmap { |r| on_success(r) }.or { |r| on_failure(r) }
-      rescue StandardError => e
-        raise e if optional_error?(e, 'ActiveRecord::RecordNotFound')
-
-        if optional_error?(e, 'ActiveRecord::InvalidForeignKey')
-          Failure(call_hook(:foreign_key_error, e) || { error: e.message })
-        else
-          Failure(call_hook(:unexpected_error, e) || { error: e.message })
-        end
       end
 
       protected

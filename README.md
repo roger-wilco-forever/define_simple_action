@@ -129,7 +129,6 @@ call_hook(:some_hook_name, *args) # => __send__(:some_hook_name, *args), есл�
 - `batch_destroy_error(errors)` — ошибка batch_destroy (дефолт: `{ errors: }`)
 - `after_mutation(model_name)` — вызывается после успешного create/update/batch_destroy (дефолт: ничего)
 - `soft_delete?(model_class)` — discard vs destroy в destroy/batch_destroy (дефолт: `false`, всегда hard delete)
-- `auth_object` — передаётся в Ransack при `#ransack(q, auth_object:)` в IndexService (дефолт: `nil`)
 - `index_response_class` — класс, которым оборачивается `{data:, meta:}` в IndexService (дефолт: `DefineSimpleAction::BaseServices::Responses::IndexResponse`) — переопределите, если у вас уже есть `is_a?`-проверки/подклассы, завязанные на свой класс
 - `notify(resource)` — вызывается после call, если `notify_data[:watch_keys]` непусто
 
@@ -147,24 +146,65 @@ call_hook(:some_hook_name, *args) # => __send__(:some_hook_name, *args), есл�
 
 ## Зависимости
 
-Gem не зависит от Rails/ActiveSupport/ActiveRecord — только dry-rb (`dry-monads`,
-`dry-initializer`, `dry-types`, `dry-inflector`):
+Gem не зависит от Rails/ActiveSupport — только dry-rb (`dry-monads`, `dry-initializer`,
+`dry-types`, `dry-inflector`, `dry-transformer`):
 
 - `camelize`/`underscore` — `Dry::Inflector`, а не `ActiveSupport::Inflector`.
 - `constantize`/`safe_constantize` — свои, `DefineSimpleAction.constantize`/`.safe_constantize`
   (обёртка над `Object#const_get`), а не ActiveSupport-монкипатч `String#constantize`.
-- `deep_symbolize_keys` — свой хелпер в `Concern`, без `Hash#deep_symbolize_keys`.
-- `ActiveModel::Type::Boolean` — своя реализация того же списка "ложных" значений
-  (`IndexService::FALSE_VALUES`).
-- `ActiveRecord`/`ransack`/`discard` — **опциональные интеграции хоста, не зависимости gem'а**.
-  `IndexService` дефолтно вызывает `#ransack` на `scope`, а `Create/Update/BatchDestroyService`
-  проверяют классы исключений (`ActiveRecord::InvalidForeignKey` и т.д.) через
-  `DefineSimpleAction.safe_constantize` в рантайме (`BaseService#optional_error?`) — если хост
-  их не подключил, соответствующая ветка просто не сработает, а не `NameError` при загрузке gem'а.
+- `deep_symbolize_keys` — `Dry::Transformer::HashTransformations.deep_symbolize_keys`, а не
+  `Hash#deep_symbolize_keys`.
+- `ActiveModel::Type::Boolean` — `Dry::Transformer::Coercions.to_boolean` (с `rescue KeyError`
+  на нераспознанных значениях), а не `activemodel`.
 
 `Concern` (контроллерный слой) остаётся Rails-специфичным по своей природе — он подмешивается
 в `ActionController` и использует `params`/`request`/`render`/`respond_to` напрямую; это не
 то, что имеет смысл абстрагировать.
+
+## ActiveRecord/Ransack/discard — не в gem'е вообще
+
+В отличие от v1 (где эти интеграции жили в gem'е как duck-typed рантайм-проверки), сейчас
+`BaseServices` **вообще не знает** об ActiveRecord/Ransack/discard:
+
+- `IndexService#prepare_query` по умолчанию — просто `scope(params)`, без вызова `#ransack`.
+- `Create/Update/BatchDestroyService` не перехватывают вообще никаких исключений — что
+  бы ни бросил `#create_resource`/`model.find`/`destroy_all`, оно пробрасывается наружу как есть.
+
+Если хост использует ActiveRecord/Ransack/discard, это подключается монкипатчем
+(`Module#prepend`) поверх классов gem'а — это код хоста, не gem'а:
+
+```ruby
+# config/initializers/define_simple_action_active_record.rb (или app/services/.../*.rb)
+module ActiveRecordIndexQuery
+  def prepare_query(params)
+    scope(params).ransack(params[:q], auth_object: auth_object).result
+  end
+end
+
+module ActiveRecordCreateErrorHandling
+  def execute(params)
+    super
+  rescue ActiveRecord::RecordNotFound => e
+    raise e
+  rescue ActiveRecord::InvalidForeignKey => e
+    Failure(foreign_key_error(e))
+  rescue StandardError => e
+    Failure(unexpected_error(e))
+  end
+end
+
+DefineSimpleAction::BaseServices::IndexService.prepend(ActiveRecordIndexQuery)
+DefineSimpleAction::BaseServices::CreateService.prepend(ActiveRecordCreateErrorHandling)
+```
+
+Важный нюанс: `Update`/`BatchDestroyService` в gem'е **не имеют собственного `rescue`**, так что
+`prepend` с `rescue` вокруг `super` работает напрямую. `Create`/`BatchDestroyService`-специфичные
+StandardError-перехватчики — то же самое, т.к. в gem'е теперь такого перехвата вообще нет (было
+раньше, но убрано вместе с ActiveRecord-осведомлённостью). Если бы у метода в gem'е был свой
+`rescue StandardError` — простой `prepend` + `rescue` вокруг `super` не сработал бы (внутренний
+`rescue` перехватил бы исключение раньше, чем оно дошло бы до прикладного `rescue`); в этом случае
+пришлось бы выносить перехват в отдельный переопределяемый метод. См. Randewoo
+(`app/services/redesign/active_record_error_handling.rb`) за рабочим примером.
 
 ## Development
 
