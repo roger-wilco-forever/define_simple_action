@@ -114,15 +114,16 @@ RSpec.describe "DefineSimpleAction::BaseServices" do
       expect(service.call({})).to be_success
     end
 
-    it "deep_dup's the contract validation error — a host mutating it (e.g. a camelCase key " \
-       "transformer) must not hit FrozenError from dry-validation's frozen MessageSet#to_h" do
+    it "tags a contract validation Failure with type: :contract_validation and deep_dup's the " \
+       "errors — the host matches on :type to pick a response format, and must not hit " \
+       "FrozenError mutating dry-validation's frozen MessageSet#to_h in place" do
       contract = failing_contract_class
       klass = Class.new(service_class) { define_method(:contract) { contract } }
 
       result = klass.new(model: "Widget").call({})
 
       expect(result).to be_failure
-      expect(result.failure).to eq(errors: { ids: ["Должен быть массивом"] })
+      expect(result.failure).to eq(type: :contract_validation, errors: { ids: ["Должен быть массивом"] })
       expect(result.failure[:errors]).not_to be_frozen
       expect { result.failure[:errors].delete(:ids) }.not_to raise_error
     end

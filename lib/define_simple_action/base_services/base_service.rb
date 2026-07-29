@@ -16,6 +16,12 @@ module DefineSimpleAction
     # Хуки (форматы ошибок, инвалидация кэша, soft-delete-конвенция и т.д.) в gem'е
     # не декларируются — см. #call_hook. Хост определяет только те, что ему реально
     # нужны, под любым именем, которое ожидает точка вызова (см. README).
+    #
+    # #validate_params — особый случай: это не hook (нечего вызывать до старта execute),
+    # а тип ошибки прямо в Failure — Failure(type: :contract_validation, errors: {...}).
+    # Формат ответа (envelope, коды ошибок и т.д.) gem не решает вообще; хост сам матчит
+    # по :type в точке, где рендерит ответ (см. README, "Contract validation — тип ошибки,
+    # не hook").
     class BaseService
       include Dry::Monads[:do, :maybe, :result, :try]
       include Callbacks
@@ -47,7 +53,9 @@ module DefineSimpleAction
       def validate_params(params)
         contract.new.call(params)
                 .to_monad
-                .or { |error| Failure(errors: ::DefineSimpleAction.deep_dup(error.errors.to_h)) }
+                .or do |error|
+                  Failure(type: :contract_validation, errors: ::DefineSimpleAction.deep_dup(error.errors.to_h))
+                end
       end
 
       protected

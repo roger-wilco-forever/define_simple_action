@@ -70,6 +70,38 @@ SomeService.new(
 Сервис должен отвечать на `#call(params)`, возвращая объект с `#failure?` (контракт
 Result/dry-monads: `Success`/`Failure`).
 
+### Contract validation — тип ошибки, не hook
+
+Если dry-validation контракт (см. `#contract`) не проходит, `BaseServices::BaseService#call`
+возвращает `Failure(type: :contract_validation, errors: {...})` — `errors:` это
+`error.errors.to_h` контракта, глубоко продублированный (`DefineSimpleAction.deep_dup`, без
+ActiveSupport), т.к. dry-validation отдаёт замороженный `MessageSet#to_h` и хост, который
+мутирует его на месте (например, camelCase-трансформер ключей в блюпринте), иначе ловит
+`FrozenError`.
+
+Это **не** `call_hook`-точка расширения — gem не вызывает никакой хостовый метод для
+форматирования этой ошибки и не знает, во что она должна превратиться в ответе (код ошибки,
+конверт и т.д.). `type: :contract_validation` — это тип ошибки внутри самой `Failure`, а
+матчинг по нему и перевод в конкретный формат ответа — целиком на хосте, в точке, где он
+рендерит `Failure` (например, `serialize_for_action` в `DefineSimpleAction::Concern`):
+
+```ruby
+def serialize_for_action(name, result, service_params)
+  return render_error(result) if result.failure?
+  ...
+end
+
+def render_error(result)
+  failure = result.failure
+
+  if failure.is_a?(Hash) && failure[:type] == :contract_validation
+    ErrorPresenter.build(code: "VALIDATION_ERROR", messages: failure[:errors])
+  else
+    failure # другие типы ошибок уже приходят в нужном хосту формате — см. хуки ниже
+  end
+end
+```
+
 ## Точки расширения (хуки)
 
 Обязательные (по умолчанию — `NotImplementedError`):
