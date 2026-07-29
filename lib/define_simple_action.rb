@@ -22,6 +22,20 @@ module DefineSimpleAction
   rescue NameError
     nil
   end
+
+  # Без ActiveSupport#deep_dup: дефолтная dry-validation-ошибка (см. BaseService#validate_params)
+  # приходит с замороженными вложенными Hash — если хост (Blueprinter camelCase-трансформер
+  # и т.п.) попробует мутировать её на месте, ловит FrozenError.
+  def self.deep_dup(value)
+    case value
+    when Hash
+      value.each_with_object({}) { |(key, val), copy| copy[key] = deep_dup(val) }
+    when Array
+      value.map { |val| deep_dup(val) }
+    else
+      value
+    end
+  end
 end
 
 require_relative 'define_simple_action/concern'

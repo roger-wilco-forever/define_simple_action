@@ -47,7 +47,7 @@ module DefineSimpleAction
       def validate_params(params)
         contract.new.call(params)
                 .to_monad
-                .or { |error| Failure(errors: error.errors.to_h) }
+                .or { |error| Failure(errors: ::DefineSimpleAction.deep_dup(error.errors.to_h)) }
       end
 
       protected

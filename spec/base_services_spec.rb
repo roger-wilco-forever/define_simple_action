@@ -67,6 +67,34 @@ RSpec.describe "DefineSimpleAction::BaseServices" do
     end
   end
 
+  # Контракт-двойник: всегда падает, .errors.to_h возвращает замороженный Hash — как
+  # реальный dry-validation MessageSet#to_h (см. deep_dup-тест ниже).
+  let(:failing_contract_class) do
+    Class.new do
+      def call(_params)
+        FailureResult.new
+      end
+
+      class FailureResult
+        include Dry::Monads[:result]
+
+        def to_monad
+          Failure(ErrorSet.new)
+        end
+      end
+
+      class ErrorSet
+        def errors
+          self
+        end
+
+        def to_h
+          { ids: ["Должен быть массивом"] }.freeze
+        end
+      end
+    end
+  end
+
   describe DefineSimpleAction::BaseServices::BaseService do
     let(:service_class) do
       contract = passing_contract_class
@@ -84,6 +112,19 @@ RSpec.describe "DefineSimpleAction::BaseServices" do
       service = service_class.new(model: "Widget")
 
       expect(service.call({})).to be_success
+    end
+
+    it "deep_dup's the contract validation error — a host mutating it (e.g. a camelCase key " \
+       "transformer) must not hit FrozenError from dry-validation's frozen MessageSet#to_h" do
+      contract = failing_contract_class
+      klass = Class.new(service_class) { define_method(:contract) { contract } }
+
+      result = klass.new(model: "Widget").call({})
+
+      expect(result).to be_failure
+      expect(result.failure).to eq(errors: { ids: ["Должен быть массивом"] })
+      expect(result.failure[:errors]).not_to be_frozen
+      expect { result.failure[:errors].delete(:ids) }.not_to raise_error
     end
 
     it "has no notify/notify_data of its own — that's a host concern (see README, 'Notify — не в gem'е')" do
