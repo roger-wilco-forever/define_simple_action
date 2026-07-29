@@ -10,7 +10,9 @@ require "dry/types"
 # конкретные классы исключений через DefineSimpleAction.safe_constantize в рантайме
 # (см. BaseService#optional_error?) — без require и без записи в gemspec-зависимости.
 
+require_relative "instrumentation"
 require_relative "base_services/responses/index_response"
+require_relative "base_services/callbacks"
 require_relative "base_services/base_service"
 require_relative "base_services/index_service"
 require_relative "base_services/show_service"

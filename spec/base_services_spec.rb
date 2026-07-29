@@ -86,9 +86,37 @@ RSpec.describe "DefineSimpleAction::BaseServices" do
       expect(service.call({})).to be_success
     end
 
-    it "calls #notify only when notify_data has watch_keys" do
+    it "has no notify/notify_data of its own — that's a host concern (see README, 'Notify — не в gem'е')" do
+      expect(described_class.private_method_defined?(:notify_data)).to eq(false)
+
+      # dry-initializer молча игнорирует непойманный kwarg, если он не объявлен через
+      # option — notify_data просто никуда не попадает и ничего не запускает.
+      result = service_class.new(model: "Widget", notify_data: { watch_keys: [:title] }).call({})
+
+      expect(result).to be_success
+    end
+
+    it "lets a host rebuild notify entirely on public extension points (option/after_execute/call_hook)" do
       calls = []
+      notifiable = Module.new do
+        def self.included(base)
+          base.option :notify_data, optional: true, reader: :private
+          base.after_execute :dispatch_notify, if: :notify_applicable?
+        end
+
+        private
+
+        def notify_applicable?(result)
+          result.success? && notify_data&.dig(:watch_keys)&.any?
+        end
+
+        def dispatch_notify(result)
+          call_hook(:notify, result.value!)
+        end
+      end
+
       klass = Class.new(service_class) do
+        include notifiable
         define_method(:notify) { |result| calls << result }
       end
 
@@ -128,6 +156,106 @@ RSpec.describe "DefineSimpleAction::BaseServices" do
       end
 
       expect { klass.new(model: "Widget").call({}) }.to raise_error(NotImplementedError, /Validation contract/)
+    end
+
+    describe "before_execute/after_execute callback chains" do
+      it "runs multiple before_execute/after_execute callbacks (methods and blocks) in registration order" do
+        trace = []
+        received_params = nil
+        klass = Class.new(service_class) do
+          before_execute :first_before
+          before_execute { trace << :second_before }
+          after_execute :first_after
+          after_execute { trace << :second_after }
+
+          define_method(:first_before) { |params| received_params = params; trace << :first_before }
+          define_method(:first_after) { |_result| trace << :first_after }
+        end
+
+        klass.new(model: "Widget").call(title: "Foo")
+
+        expect(trace).to eq(%i[first_before second_before first_after second_after])
+        expect(received_params).to eq(title: "Foo")
+      end
+
+      it "halts the chain when a before_execute callback returns Failure — #execute and after_execute never run" do
+        executed = false
+        after_ran = false
+        klass = Class.new(service_class) do
+          before_execute :blocker
+
+          define_method(:blocker) { |_params| Failure(:blocked) }
+          define_method(:execute) { |**_params| executed = true; Success(:unreachable) }
+          define_method(:after_execute_probe) { |_result| after_ran = true }
+
+          after_execute :after_execute_probe
+        end
+
+        result = klass.new(model: "Widget").call({})
+
+        expect(result).to be_failure
+        expect(result.failure).to eq(:blocked)
+        expect(executed).to eq(false)
+        expect(after_ran).to eq(false)
+      end
+
+      it "skips a callback whose :if guard is falsy and runs one whose :unless guard is falsy" do
+        trace = []
+        klass = Class.new(service_class) do
+          before_execute :skipped, if: :never?
+          before_execute :included, unless: :never?
+
+          define_method(:never?) { |_params| false }
+          define_method(:skipped) { |_params| trace << :skipped }
+          define_method(:included) { |_params| trace << :included }
+        end
+
+        klass.new(model: "Widget").call({})
+
+        expect(trace).to eq([:included])
+      end
+
+      it "inherits parent callbacks without letting a subclass mutate the parent's chain" do
+        parent = Class.new(service_class) do
+          before_execute :parent_cb
+          define_method(:parent_cb) { |_params| (self.trace ||= []) << :parent_cb }
+          attr_accessor :trace
+        end
+        child = Class.new(parent) do
+          before_execute :child_cb
+          define_method(:child_cb) { |_params| (self.trace ||= []) << :child_cb }
+        end
+
+        child.new(model: "Widget").call({})
+
+        expect(parent.before_execute_callbacks.size).to eq(1)
+        expect(child.before_execute_callbacks.size).to eq(2)
+      end
+    end
+
+    describe "dry-monitor instrumentation" do
+      after { DefineSimpleAction.instance_variable_set(:@notifications, nil) }
+
+      it "publishes define_simple_action.execute with service/model/success/time around #execute" do
+        events = []
+        DefineSimpleAction.notifications.subscribe("define_simple_action.execute") { |event| events << event.payload }
+
+        service_class.new(model: "Widget").call({})
+
+        expect(events.size).to eq(1)
+        expect(events.first).to include(model: "Widget", success: true)
+        expect(events.first[:time]).to be_a(Integer)
+      end
+
+      it "still reports success: false when #execute returns a Failure" do
+        events = []
+        DefineSimpleAction.notifications.subscribe("define_simple_action.execute") { |event| events << event.payload }
+
+        klass = Class.new(service_class) { define_method(:execute) { |**_params| Failure(:nope) } }
+        klass.new(model: "Widget").call({})
+
+        expect(events.first).to include(success: false)
+      end
     end
   end
 

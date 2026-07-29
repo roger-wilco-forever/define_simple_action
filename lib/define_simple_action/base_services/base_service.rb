@@ -3,20 +3,26 @@
 module DefineSimpleAction
   module BaseServices
     # Базовый сервис для DefineSimpleAction::Concern — принимает kwargs, которые
-    # concern передаёт при резолвинге сервиса (authorization_data:, model:, notify_data:,
+    # concern передаёт при резолвинге сервиса (authorization_data:, model:,
     # validation_contract_name:), валидирует params через dry-validation контракт
     # (резолвится по имени класса) и вызывает #execute.
+    #
+    # notify/notify_data — НЕ зона ответственности gem'а: concern по-прежнему нейтрально
+    # прокидывает notify_data: в service_params (см. Concern#fetch_service_for_action),
+    # но сам gem его не объявляет и не интерпретирует. Хосту, которому нужен notify,
+    # достаточно публичных точек расширения (option, after_execute, call_hook) — см.
+    # README, раздел "Notify — не в gem'е".
     #
     # Хуки (форматы ошибок, инвалидация кэша, soft-delete-конвенция и т.д.) в gem'е
     # не декларируются — см. #call_hook. Хост определяет только те, что ему реально
     # нужны, под любым именем, которое ожидает точка вызова (см. README).
     class BaseService
       include Dry::Monads[:do, :maybe, :result, :try]
+      include Callbacks
       extend Dry::Initializer
 
       option :authorization_data, optional: true, reader: :private
       option :model, optional: true, reader: :private
-      option :notify_data, optional: true, reader: :private
       option :validation_contract_name, optional: true, reader: :private
 
       PAGE_LENGTH = 100
@@ -29,10 +35,9 @@ module DefineSimpleAction
         yield(validate_params(params))
         @service_params = params
 
-        execute(**params).fmap do |result|
-          call_hook(:notify, result) if notify_data&.dig(:watch_keys)&.any?
-          result
-        end
+        yield(run_before_execute_callbacks(params))
+
+        instrumented_execute(params).tap { |result| run_after_execute_callbacks(result) }
       end
 
       # Валидируем входящие параметры. Контракт резолвится:
@@ -42,7 +47,7 @@ module DefineSimpleAction
       def validate_params(params)
         contract.new.call(params)
                 .to_monad
-                .or { |error| Failure(call_hook(:contract_validation_error, error) || { errors: error.errors.to_h }) }
+                .or { |error| Failure(errors: error.errors.to_h) }
       end
 
       protected
@@ -50,9 +55,9 @@ module DefineSimpleAction
       attr_reader :service_params
 
       # Вызывает метод <tt>name</tt>, если хост его определил (под любым именем,
-      # которое ожидает конкретная точка вызова — contract_validation_error,
-      # invalid_record_error, foreign_key_error, unexpected_error, batch_destroy_error,
-      # after_mutation, soft_delete?, notify, ...), иначе возвращает nil — дефолт
+      # которое ожидает конкретная точка вызова — invalid_record_error,
+      # foreign_key_error, unexpected_error, batch_destroy_error,
+      # after_mutation, soft_delete?, ...), иначе возвращает nil — дефолт
       # подставляется на месте вызова через <tt>||</tt>. Ни один из этих хуков не
       # декларируется в gem'е как метод: хост создаёт только то, что ему нужно.
       #
@@ -64,10 +69,22 @@ module DefineSimpleAction
         __send__(name, *args) if respond_to?(name, true)
       end
 
+      # Оборачивает #execute dry-monitor'ным событием "define_simple_action.execute"
+      # (service, model, success, time) — публикуется всегда; подписка (метрики, логи,
+      # трейсинг) целиком на хосте, см. DefineSimpleAction.notifications.
+      def instrumented_execute(params)
+        payload = { service: self.class.name, model: model }
+
+        ::DefineSimpleAction.notifications.instrument('define_simple_action.execute', payload) do
+          execute(**params).tap { |result| payload[:success] = result.success? }
+        end
+      end
+
       def contract
         validation_contract = validation_contract_name && ::DefineSimpleAction.safe_constantize(validation_contract_name)
         validation_contract ||= ::DefineSimpleAction.safe_constantize(self.class.to_s.gsub(/Service\z/, 'Contract'))
-        validation_contract ||= ::DefineSimpleAction.safe_constantize(self.class.superclass.name.gsub(/Service\z/, 'Contract'))
+        validation_contract ||= ::DefineSimpleAction.safe_constantize(self.class.superclass.name.gsub(/Service\z/,
+                                                                                                      'Contract'))
 
         if validation_contract.nil?
           raise(NotImplementedError, "Validation contract not found for #{self.class} " \

@@ -39,6 +39,7 @@ Gem::Specification.new do |spec|
   spec.add_dependency 'dry-inflector', '~> 1.0'
   spec.add_dependency 'dry-initializer', '~> 3.0'
   spec.add_dependency 'dry-monads', '~> 1.0'
+  spec.add_dependency 'dry-monitor', '~> 1.0'
   spec.add_dependency 'dry-transformer', '~> 1.0'
   spec.add_dependency 'dry-types', '~> 1.0'
 

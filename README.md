@@ -57,10 +57,15 @@ end
 SomeService.new(
   authorization_data: authorization_data,     # результат хука #authorization_data
   model: model_name,                          # строка или класс, переданный в define_simple_actions
-  notify_data: notify_data,                   # то, что передали в define_simple_actions
+  notify_data: notify_data,                   # то, что передали в define_simple_actions (см. ниже)
   validation_contract_name: "..."             # см. #fetch_validation_contract_name_for_action
 )
 ```
+
+`notify_data:` concern передаёт нейтрально (просто прокидывает то, что дали в
+`define_simple_actions(notify_data: ...)`) и никак не интерпретирует. `BaseServices::BaseService`
+тоже не объявляет `option :notify_data` и не знает про `notify` — это целиком зона хоста, см.
+раздел "Notify — не в gem'е" ниже.
 
 Сервис должен отвечать на `#call(params)`, возвращая объект с `#failure?` (контракт
 Result/dry-monads: `Success`/`Failure`).
@@ -123,17 +128,127 @@ call_hook(:some_hook_name, *args) # => __send__(:some_hook_name, *args), есл�
 
 Используемые имена (вызываются, если определены; иначе — нейтральный дефолт inline):
 
-- `contract_validation_error(dry_validation_result)` — ошибка невалидных params (дефолт: `{ errors: ... }`)
 - `invalid_record_error(record)` — ошибка `record.errors` при create/update/destroy (дефолт: `{ errors: record.errors.messages }`)
 - `foreign_key_error(exception)` / `unexpected_error(exception)` — ошибки исключений в create/update (дефолт: `{ error: exception.message }`)
 - `batch_destroy_error(errors)` — ошибка batch_destroy (дефолт: `{ errors: }`)
 - `after_mutation(model_name)` — вызывается после успешного create/update/batch_destroy (дефолт: ничего)
 - `soft_delete?(model_class)` — discard vs destroy в destroy/batch_destroy (дефолт: `false`, всегда hard delete)
 - `index_response_class` — класс, которым оборачивается `{data:, meta:}` в IndexService (дефолт: `DefineSimpleAction::BaseServices::Responses::IndexResponse`) — переопределите, если у вас уже есть `is_a?`-проверки/подклассы, завязанные на свой класс
-- `notify(resource)` — вызывается после call, если `notify_data[:watch_keys]` непусто
+
+`notify`/`notify_data` в этом списке **нет** — см. раздел "Notify — не в gem'е" ниже.
 
 Ничего из этого не обязательно определять: если хук не нужен в конкретном сервисе — просто
 не создавайте метод с этим именем, `call_hook` вернёт `nil`, и сработает дефолт.
+
+### before_execute / after_execute — Rails-подобные callback-цепочки
+
+В отличие от `call_hook` (один опциональный метод на точку расширения), `before_execute`/
+`after_execute` — полноценные цепочки: можно повесить несколько callback'ов на одну и ту же
+точку (в т.ч. из разных модулей, подключённых в один сервис), с условиями `if:`/`unless:`,
+и они наследуются (подкласс добавляет свои, не трогая родительские):
+
+```ruby
+class BrandsController::CreateService < DefineSimpleAction::BaseServices::CreateService
+  before_execute :authorize_brand!
+  before_execute :normalize_slug, if: :slug_present?
+  after_execute :invalidate_cache
+
+  def authorize_brand!(_params)
+    Failure(errors: ["forbidden"]) unless current_user.admin?
+  end
+
+  def normalize_slug(_params)
+    # ...
+  end
+
+  def slug_present?(params)
+    params[:slug].present?
+  end
+
+  def invalidate_cache(result)
+    Rails.cache.delete("brands") if result.success?
+  end
+end
+```
+
+Callback можно задать именем метода (символ, можно несколько за один вызов) или блоком
+(`before_execute { ... }`, `instance_exec`'ится на сервисе).
+
+`before_execute`-callback (и его `if:`/`unless:`-guard) получает аргументом `service_params` —
+те же params, что переданы в `#call`; `after_execute`-callback (и его guard) — финальный
+`Result` из `#execute`. Оба передаются явно, а не через скрытое состояние сервиса; если
+`after_execute` нужен только на успех, проверяйте `result.success?` внутри колбэка или в
+guard'е (`if: ->(result) { result.success? }`).
+
+Остановка цепочки — через dry-monads, а не Rails-овский `throw(:abort)`: если
+`before_execute`-callback возвращает `Failure(...)`, она становится результатом `#call`,
+а `#execute` и все остальные `before_execute`/`after_execute` не вызываются. `after_execute`
+запускается всегда после `#execute` (успех или неудача) — сам колбэк ничего не подменяет,
+чисто побочный эффект.
+
+`after_mutation` **не** заведён через `after_execute` — это по-прежнему прямой `call_hook`-вызов
+внутри `#execute` (см. список динамических хуков выше). Решение, какими хуками пользоваться для
+своих задач — `call_hook` (один опциональный метод) или `before_execute`/`after_execute`
+(цепочка) — гем не принимает сам за хоста: это wiring конкретного приложения, а не часть
+BaseServices.
+
+### Notify — не в gem'е
+
+`notify`/`notify_data` были в gem'е как готовый хук с конвенцией `watch_keys` — теперь это
+целиком зона хоста, по той же логике, что и ActiveRecord/Ransack/discard (см. ниже): concern
+нейтрально прокидывает `notify_data:` в `service_params` (host сам решает, что туда положить и
+как назвать), а `BaseServices::BaseService` про `notify` вообще не знает — ни `option`, ни
+вызова. Всё, что нужно для восстановления прежнего поведения, уже публично доступно
+(`option`, `after_execute`, `call_hook`), monkeypatch/`prepend` не требуется — достаточно
+обычного `include` в свой сервисный слой:
+
+```ruby
+# app/services/application_service/notifiable.rb (или где угодно у хоста)
+module ApplicationService
+  module Notifiable
+    def self.included(base)
+      base.option :notify_data, optional: true, reader: :private
+      base.after_execute :dispatch_notify, if: :notify_applicable?
+    end
+
+    private
+
+    def notify_applicable?(result)
+      result.success? && notify_data&.dig(:watch_keys)&.any?
+    end
+
+    def dispatch_notify(result)
+      call_hook(:notify, result.value!)
+    end
+  end
+end
+
+class ApplicationService::Base < DefineSimpleAction::BaseServices::BaseService
+  include ApplicationService::Notifiable
+end
+```
+
+Дальше в конкретном сервисе — как раньше:
+
+```ruby
+class BrandsController::CreateService < ApplicationService::Base
+  def notify(resource)
+    NotifyBrandChangeJob.perform_later(resource.id)
+  end
+end
+```
+
+### Инструментация — dry-monitor
+
+Вокруг `#execute` всегда публикуется событие `define_simple_action.execute` через
+`Dry::Monitor::Notifications` (`service:`, `model:`, `success:`, `time:` в наносекундах).
+Подписка — целиком на хосте, gem ничего не решает за него:
+
+```ruby
+DefineSimpleAction.notifications.subscribe("define_simple_action.execute") do |event|
+  StatsD.timing("services.#{event[:service]}", event[:time])
+end
+```
 
 ### Опасность бок о бок с Dry::Monads[:do]
 
@@ -147,7 +262,7 @@ call_hook(:some_hook_name, *args) # => __send__(:some_hook_name, *args), есл�
 ## Зависимости
 
 Gem не зависит от Rails/ActiveSupport — только dry-rb (`dry-monads`, `dry-initializer`,
-`dry-types`, `dry-inflector`, `dry-transformer`):
+`dry-types`, `dry-inflector`, `dry-transformer`, `dry-monitor`):
 
 - `camelize`/`underscore` — `Dry::Inflector`, а не `ActiveSupport::Inflector`.
 - `constantize`/`safe_constantize` — свои, `DefineSimpleAction.constantize`/`.safe_constantize`
