@@ -10,24 +10,32 @@ module DefineSimpleAction
     # #remove_resource в дочернем классе — никакого стороннего ORM-словаря в самом gem'е.
     class DestroyService < BaseService
       def execute(params)
-        resource = destroy_resource(params)
-
-        if remove_resource(resource)
-          Success(resource)
-        else
-          Failure(type: :invalid_record, errors: ::DefineSimpleAction.deep_dup(resource.errors.messages))
-        end
+        attempt_removal(destroy_resource(params)).fmap { |r| on_success(r) }.or { |r| on_failure(r) }
       end
 
       protected
 
       # Для возможности переопределить этот кусок кода в дочерних классах
       def destroy_resource(params)
-        @destroy_resource ||= scope(params).find(params[:id])
+        scope(params).find(params[:id])
       end
 
       def remove_resource(resource)
         resource.destroy
+      end
+
+      private
+
+      def attempt_removal(resource)
+        remove_resource(resource) ? Success({ resource: }) : Failure({ resource: })
+      end
+
+      def on_failure(record)
+        Failure(type: :invalid_record, errors: ::DefineSimpleAction.deep_dup(record[:resource].errors.messages))
+      end
+
+      def on_success(record)
+        record[:resource]
       end
     end
   end
