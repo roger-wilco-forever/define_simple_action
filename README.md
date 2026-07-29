@@ -168,14 +168,46 @@ call_hook(:some_hook_name, *args) # => __send__(:some_hook_name, *args), есл�
 
 Используемые имена (вызываются, если определены; иначе — нейтральный дефолт inline):
 
-- `soft_delete?(model_class)` — discard vs destroy в destroy/batch_destroy (дефолт: `false`, всегда hard delete)
 - `index_response_class` — класс, которым оборачивается `{data:, meta:}` в IndexService (дефолт: `DefineSimpleAction::BaseServices::Responses::IndexResponse`) — переопределите, если у вас уже есть `is_a?`-проверки/подклассы, завязанные на свой класс
 
-`notify`/`notify_data` и `after_mutation` в этом списке **нет** — это `after_execute`-колбэки
-хоста, не `call_hook`, см. разделы "Notify — не в gem'е" и "after_mutation — не в gem'е" ниже.
+`notify`/`notify_data`, `after_mutation` и удаление (`soft_delete?`) в этом списке **нет** — см.
+разделы "Notify — не в gem'е", "after_mutation — не в gem'е" и "Удаление — не hook" ниже.
 
 Ничего из этого не обязательно определять: если хук не нужен в конкретном сервисе — просто
 не создавайте метод с этим именем, `call_hook` вернёт `nil`, и сработает дефолт.
+
+### Удаление — не hook, обычный переопределяемый метод
+
+Раньше `Destroy`/`BatchDestroyService` сами звали `call_hook(:soft_delete?, model_class)` и по
+результату выбирали `:discard`/`:destroy` (`:discard_all`/`:destroy_all`) — то есть gem знал имена
+методов стороннего гема `discard`. Теперь это обычное переопределение метода, без hook и без
+привязки к конкретному soft-delete-гему:
+
+- `DestroyService#remove_resource(resource)` — дефолт `resource.destroy`.
+- `BatchDestroyService#remove_resources(relation)` / `#removed?(resource)` — дефолт
+  `relation.destroy_all` / `resource.destroyed?`.
+
+```ruby
+class BrandsController::DestroyService < DefineSimpleAction::BaseServices::DestroyService
+  protected
+
+  def remove_resource(resource)
+    resource.discard
+  end
+end
+
+class BrandsController::BatchDestroyService < DefineSimpleAction::BaseServices::BatchDestroyService
+  protected
+
+  def remove_resources(relation)
+    relation.discard_all
+  end
+
+  def removed?(resource)
+    resource.discarded?
+  end
+end
+```
 
 ### before_execute / after_execute — Rails-подобные callback-цепочки
 

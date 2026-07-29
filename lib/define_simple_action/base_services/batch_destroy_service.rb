@@ -3,9 +3,25 @@
 module DefineSimpleAction
   module BaseServices
     # Failure(type: :batch_destroy, errors: [...]) — тип ошибки, не hook, см. CreateService.
+    #
+    # Удаление — не hook (call_hook(:soft_delete?, ...)), а обычные переопределяемые методы
+    # (#remove_resources/#removed?): дефолт — plain #destroy_all/#destroyed?, gem ничего не
+    # знает про discard или другой soft-delete-гем. Хосту, которому нужен soft-delete,
+    # достаточно переопределить оба метода в дочернем классе — никакого стороннего
+    # ORM-словаря в самом gem'е.
     class BatchDestroyService < BaseService
       def execute(params)
         destroy_resource(params)
+      end
+
+      protected
+
+      def remove_resources(relation)
+        relation.destroy_all
+      end
+
+      def removed?(resource)
+        resource.destroyed?
       end
 
       private
@@ -19,7 +35,7 @@ module DefineSimpleAction
       end
 
       def destroyed(params)
-        @destroyed ||= resource_to_delete(params[:ids]).public_send(method_for_delete)
+        @destroyed ||= remove_resources(resource_to_delete(params[:ids]))
       end
 
       def errors
@@ -30,17 +46,8 @@ module DefineSimpleAction
         Failure(type: :batch_destroy, errors:)
       end
 
-      def method_for_delete
-        call_hook(:soft_delete?, model) ? :discard_all : :destroy_all
-      end
-
       def not_destroyed
-        @not_destroyed ||=
-          if method_for_delete == :destroy_all
-            @destroyed.reject(&:destroyed?)
-          else
-            @destroyed.reject(&:discarded?)
-          end
+        @not_destroyed ||= @destroyed.reject { |r| removed?(r) }
       end
 
       def resource_to_delete(ids)

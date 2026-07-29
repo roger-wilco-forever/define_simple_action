@@ -3,16 +3,19 @@
 module DefineSimpleAction
   module BaseServices
     # Failure(type: :invalid_record, errors: {...}) — тип ошибки, не hook, см. CreateService.
+    #
+    # Удаление — не hook (call_hook(:soft_delete?, ...)), а обычный переопределяемый метод
+    # (#remove_resource): дефолт — plain #destroy, gem ничего не знает про discard или другой
+    # soft-delete-гем. Хосту, которому нужен soft-delete, достаточно переопределить
+    # #remove_resource в дочернем классе — никакого стороннего ORM-словаря в самом gem'е.
     class DestroyService < BaseService
       def execute(params)
         resource = destroy_resource(params)
-        delete_action = call_hook(:soft_delete?, resource.class) ? :discard : :destroy
 
-        if destroy_resource(params).public_send(delete_action)
+        if remove_resource(resource)
           Success(resource)
         else
-          record = destroy_resource(params)
-          Failure(type: :invalid_record, errors: ::DefineSimpleAction.deep_dup(record.errors.messages))
+          Failure(type: :invalid_record, errors: ::DefineSimpleAction.deep_dup(resource.errors.messages))
         end
       end
 
@@ -21,6 +24,10 @@ module DefineSimpleAction
       # Для возможности переопределить этот кусок кода в дочерних классах
       def destroy_resource(params)
         @destroy_resource ||= scope(params).find(params[:id])
+      end
+
+      def remove_resource(resource)
+        resource.destroy
       end
     end
   end

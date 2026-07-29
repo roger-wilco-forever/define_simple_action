@@ -176,18 +176,17 @@ RSpec.describe "DefineSimpleAction::BaseServices" do
     it "#call_hook returns nil for a hook the host never defined (no stub declared in the gem)" do
       service = service_class.new(model: "Widget")
 
-      expect(service.send(:call_hook, :soft_delete?, record_class)).to be_nil
       expect(service.send(:call_hook, :index_response_class)).to be_nil
-      expect(service.class.private_method_defined?(:soft_delete?)).to eq(false)
+      expect(service.send(:call_hook, :some_hook_the_host_never_defined)).to be_nil
       expect(service.class.private_method_defined?(:index_response_class)).to eq(false)
     end
 
     it "#call_hook dispatches to whatever method the host defines under that name" do
       klass = Class.new(service_class) do
-        define_method(:soft_delete?) { |_model_class| true }
+        define_method(:index_response_class) { "CustomResponse" }
       end
 
-      expect(klass.new(model: "Widget").send(:call_hook, :soft_delete?, record_class)).to eq(true)
+      expect(klass.new(model: "Widget").send(:call_hook, :index_response_class)).to eq("CustomResponse")
     end
 
     it "raises when no validation contract can be resolved by naming convention" do
@@ -432,7 +431,7 @@ RSpec.describe "DefineSimpleAction::BaseServices" do
       end
     end
 
-    it "hard-destroys by default (soft_delete? false)" do
+    it "calls plain #destroy by default — no ORM/gem (e.g. discard) baked into the gem" do
       service = service_class.new(model: record_class)
 
       result = service.call(id: 1)
@@ -442,8 +441,8 @@ RSpec.describe "DefineSimpleAction::BaseServices" do
       expect(result.value!.discarded?).to eq(false)
     end
 
-    it "discards when soft_delete? is overridden to true" do
-      klass = Class.new(service_class) { define_method(:soft_delete?) { |_model| true } }
+    it "soft-deletes when a host overrides #remove_resource — plain method override, not a hook" do
+      klass = Class.new(service_class) { define_method(:remove_resource) { |resource| resource.discard } }
 
       result = klass.new(model: record_class).call(id: 1)
 
@@ -511,6 +510,25 @@ RSpec.describe "DefineSimpleAction::BaseServices" do
       expect(result).to be_success
       expect(result.value!).to all(satisfy(&:destroyed?))
       expect(mutated).to eq(["Widget"])
+    end
+
+    it "soft-deletes when a host overrides #remove_resources/#removed? — plain method " \
+       "override, not a hook" do
+      records = [record_class.new, record_class.new]
+      relation = relation_class.new(records)
+      contract = passing_contract_class
+
+      klass = Class.new(described_class) do
+        define_method(:contract) { contract }
+        define_method(:remove_resources) { |rel| rel.discard_all }
+        define_method(:removed?) { |resource| resource.discarded? }
+        define_method(:resource_to_delete) { |_ids| relation }
+      end
+
+      result = klass.new(model: record_class).call(ids: [1, 2])
+
+      expect(result).to be_success
+      expect(result.value!).to all(satisfy(&:discarded?))
     end
 
     it "tags a partial failure with type: :batch_destroy instead of running a call_hook" do
