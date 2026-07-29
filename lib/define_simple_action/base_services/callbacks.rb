@@ -91,10 +91,9 @@ module DefineSimpleAction
         Success()
       end
 
-      # Всегда запускается после #execute (успех или неудача) — чисто побочный
-      # эффект, как и существующий хук after_mutation; финальный Result передаётся
-      # колбэку аргументом (и guard'у — тем же аргументом), а не через скрытое
-      # состояние сервиса.
+      # Всегда запускается после #execute (успех или неудача) — чисто побочный эффект;
+      # финальный Result передаётся колбэку аргументом (и guard'у — тем же аргументом),
+      # а не через скрытое состояние сервиса.
       def run_after_execute_callbacks(result)
         self.class.after_execute_callbacks.each do |entry|
           next if entry.skip?(self, result)

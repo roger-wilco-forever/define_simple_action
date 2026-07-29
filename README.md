@@ -168,11 +168,11 @@ call_hook(:some_hook_name, *args) # => __send__(:some_hook_name, *args), есл�
 
 Используемые имена (вызываются, если определены; иначе — нейтральный дефолт inline):
 
-- `after_mutation(model_name)` — вызывается после успешного create/update/batch_destroy (дефолт: ничего)
 - `soft_delete?(model_class)` — discard vs destroy в destroy/batch_destroy (дефолт: `false`, всегда hard delete)
 - `index_response_class` — класс, которым оборачивается `{data:, meta:}` в IndexService (дефолт: `DefineSimpleAction::BaseServices::Responses::IndexResponse`) — переопределите, если у вас уже есть `is_a?`-проверки/подклассы, завязанные на свой класс
 
-`notify`/`notify_data` в этом списке **нет** — см. раздел "Notify — не в gem'е" ниже.
+`notify`/`notify_data` и `after_mutation` в этом списке **нет** — это `after_execute`-колбэки
+хоста, не `call_hook`, см. разделы "Notify — не в gem'е" и "after_mutation — не в gem'е" ниже.
 
 Ничего из этого не обязательно определять: если хук не нужен в конкретном сервисе — просто
 не создавайте метод с этим именем, `call_hook` вернёт `nil`, и сработает дефолт.
@@ -223,11 +223,24 @@ guard'е (`if: ->(result) { result.success? }`).
 запускается всегда после `#execute` (успех или неудача) — сам колбэк ничего не подменяет,
 чисто побочный эффект.
 
-`after_mutation` **не** заведён через `after_execute` — это по-прежнему прямой `call_hook`-вызов
-внутри `#execute` (см. список динамических хуков выше). Решение, какими хуками пользоваться для
-своих задач — `call_hook` (один опциональный метод) или `before_execute`/`after_execute`
-(цепочка) — гем не принимает сам за хоста: это wiring конкретного приложения, а не часть
-BaseServices.
+### after_mutation — не в gem'е
+
+Раньше `Create`/`Update`/`BatchDestroyService` сами звали `call_hook(:after_mutation, model.name)`
+на успехе. Теперь gem этого не делает вообще — как и с `notify` (см. ниже), это чистый побочный
+эффект без формата ответа, и `after_execute` — прямая замена: колбэк получает финальный `Result`,
+`if: ->(result) { result.success? }` воспроизводит прежнее "только на успех":
+
+```ruby
+class ApplicationService::Create < DefineSimpleAction::BaseServices::CreateService
+  after_execute :invalidate_cache, if: ->(result) { result.success? }
+
+  private
+
+  def invalidate_cache(_result)
+    Rails.cache.delete("brands")
+  end
+end
+```
 
 ### Notify — не в gem'е
 

@@ -24,8 +24,6 @@ module DefineSimpleAction
       end
 
       def on_success(record)
-        call_hook(:after_mutation, model.name)
-
         record[:resource]
       end
     end

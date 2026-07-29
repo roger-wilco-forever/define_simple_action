@@ -177,9 +177,9 @@ RSpec.describe "DefineSimpleAction::BaseServices" do
       service = service_class.new(model: "Widget")
 
       expect(service.send(:call_hook, :soft_delete?, record_class)).to be_nil
-      expect(service.send(:call_hook, :after_mutation, "Widget")).to be_nil
+      expect(service.send(:call_hook, :index_response_class)).to be_nil
       expect(service.class.private_method_defined?(:soft_delete?)).to eq(false)
-      expect(service.class.private_method_defined?(:after_mutation)).to eq(false)
+      expect(service.class.private_method_defined?(:index_response_class)).to eq(false)
     end
 
     it "#call_hook dispatches to whatever method the host defines under that name" do
@@ -321,10 +321,13 @@ RSpec.describe "DefineSimpleAction::BaseServices" do
       expect(result.value!).to be_a(record_class)
     end
 
-    it "calls after_mutation with the model name on success" do
+    it "has no after_mutation call_hook of its own — a host rebuilds it via after_execute " \
+       "(see README, 'after_mutation — не в gem'е')" do
       mutated = []
       klass = Class.new(service_class) do
-        define_method(:after_mutation) { |name| mutated << name }
+        after_execute :track_mutation, if: ->(result) { result.success? }
+
+        define_method(:track_mutation) { |_result| mutated << model.name }
       end
 
       klass.new(model: record_class).call(title: "Foo")
@@ -383,10 +386,13 @@ RSpec.describe "DefineSimpleAction::BaseServices" do
       end
     end
 
-    it "returns Success and calls after_mutation when update succeeds" do
+    it "returns Success — a host rebuilds after_mutation via after_execute (see README, " \
+       "'after_mutation — не в gem'е')" do
       mutated = []
       klass = Class.new(service_class) do
-        define_method(:after_mutation) { |name| mutated << name }
+        after_execute :track_mutation, if: ->(result) { result.success? }
+
+        define_method(:track_mutation) { |_result| mutated << model.name }
       end
 
       result = klass.new(model: fake_model_class).call(id: 1, title: "Foo")
@@ -485,15 +491,18 @@ RSpec.describe "DefineSimpleAction::BaseServices" do
       end
     end
 
-    it "reports after_mutation and returns all destroyed records on success" do
+    it "returns all destroyed records on success — a host rebuilds after_mutation via " \
+       "after_execute (see README, 'after_mutation — не в gem'е')" do
       records = [record_class.new, record_class.new]
       relation = relation_class.new(records)
       contract = passing_contract_class
       mutated = []
 
       klass = Class.new(described_class) do
+        after_execute :track_mutation, if: ->(result) { result.success? }
+
         define_method(:contract) { contract }
-        define_method(:after_mutation) { |name| mutated << name }
+        define_method(:track_mutation) { |_result| mutated << model.name }
         define_method(:resource_to_delete) { |_ids| relation }
       end
 

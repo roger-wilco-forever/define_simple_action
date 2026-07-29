@@ -5,11 +5,7 @@ module DefineSimpleAction
     # Failure(type: :batch_destroy, errors: [...]) — тип ошибки, не hook, см. CreateService.
     class BatchDestroyService < BaseService
       def execute(params)
-        destroy_resource(params).fmap do |result|
-          call_hook(:after_mutation, model.name)
-
-          result
-        end
+        destroy_resource(params)
       end
 
       private

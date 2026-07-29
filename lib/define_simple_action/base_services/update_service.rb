@@ -8,7 +8,6 @@ module DefineSimpleAction
         resource = model.find(params[:id])
 
         if update_resource(resource, params)
-          call_hook(:after_mutation, model.name)
           Success(resource)
         else
           Failure(type: :invalid_record, errors: ::DefineSimpleAction.deep_dup(resource.errors.messages))
