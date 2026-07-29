@@ -2,6 +2,7 @@
 
 module DefineSimpleAction
   module BaseServices
+    # Failure(type: :invalid_record, errors: {...}) — тип ошибки, не hook, см. CreateService.
     class DestroyService < BaseService
       def execute(params)
         resource = destroy_resource(params)
@@ -11,7 +12,7 @@ module DefineSimpleAction
           Success(resource)
         else
           record = destroy_resource(params)
-          Failure(call_hook(:invalid_record_error, record) || { errors: record.errors.messages })
+          Failure(type: :invalid_record, errors: ::DefineSimpleAction.deep_dup(record.errors.messages))
         end
       end
 

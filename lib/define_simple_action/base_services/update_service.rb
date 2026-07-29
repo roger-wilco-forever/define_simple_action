@@ -2,6 +2,7 @@
 
 module DefineSimpleAction
   module BaseServices
+    # Failure(type: :invalid_record, errors: {...}) — тип ошибки, не hook, см. CreateService.
     class UpdateService < BaseService
       def execute(params)
         resource = model.find(params[:id])
@@ -10,7 +11,7 @@ module DefineSimpleAction
           call_hook(:after_mutation, model.name)
           Success(resource)
         else
-          Failure(call_hook(:invalid_record_error, resource) || { errors: resource.errors.messages })
+          Failure(type: :invalid_record, errors: ::DefineSimpleAction.deep_dup(resource.errors.messages))
         end
       end
 

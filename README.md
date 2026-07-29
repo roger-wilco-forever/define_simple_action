@@ -70,20 +70,28 @@ SomeService.new(
 Сервис должен отвечать на `#call(params)`, возвращая объект с `#failure?` (контракт
 Result/dry-monads: `Success`/`Failure`).
 
-### Contract validation — тип ошибки, не hook
+### Failure(type: ..., errors: ...) — тип ошибки, не hook
 
-Если dry-validation контракт (см. `#contract`) не проходит, `BaseServices::BaseService#call`
-возвращает `Failure(type: :contract_validation, errors: {...})` — `errors:` это
-`error.errors.to_h` контракта, глубоко продублированный (`DefineSimpleAction.deep_dup`, без
-ActiveSupport), т.к. dry-validation отдаёт замороженный `MessageSet#to_h` и хост, который
-мутирует его на месте (например, camelCase-трансформер ключей в блюпринте), иначе ловит
-`FrozenError`.
+Ошибки, которые gem формирует сам (а не подставляет дефолт при отсутствии hook'а), несут
+тип прямо в `Failure`, а не форматированный ответ:
 
-Это **не** `call_hook`-точка расширения — gem не вызывает никакой хостовый метод для
-форматирования этой ошибки и не знает, во что она должна превратиться в ответе (код ошибки,
-конверт и т.д.). `type: :contract_validation` — это тип ошибки внутри самой `Failure`, а
-матчинг по нему и перевод в конкретный формат ответа — целиком на хосте, в точке, где он
-рендерит `Failure` (например, `serialize_for_action` в `DefineSimpleAction::Concern`):
+- `BaseServices::BaseService#validate_params` — dry-validation контракт (см. `#contract`) не
+  прошёл: `Failure(type: :contract_validation, errors: {...})`. `errors:` — это
+  `error.errors.to_h` контракта, глубоко продублированный (`DefineSimpleAction.deep_dup`, без
+  ActiveSupport) — dry-validation отдаёт замороженный `MessageSet#to_h`, и хост, который
+  мутирует его на месте (например, camelCase-трансформер ключей в блюпринте), иначе ловит
+  `FrozenError`.
+- `Create`/`Update`/`DestroyService` — `resource.save`/`#update`/`#destroy` вернули `false`:
+  `Failure(type: :invalid_record, errors: {...})`, `errors:` — `resource.errors.messages`
+  (тоже `deep_dup`).
+- `BatchDestroyService` — не все записи удалились: `Failure(type: :batch_destroy, errors: [...])`,
+  `errors:` — массив `full_messages` неудалившихся записей.
+
+Это **не** `call_hook`-точки расширения — gem не вызывает никакой хостовый метод для
+форматирования этих ошибок и не знает, во что они должны превратиться в ответе (код ошибки,
+конверт и т.д.). Матчинг по `:type` и перевод в конкретный формат ответа — целиком на хосте,
+в точке, где он рендерит `Failure` (например, `serialize_for_action` в
+`DefineSimpleAction::Concern`), а не на уровне сервиса:
 
 ```ruby
 def serialize_for_action(name, result, service_params)
@@ -91,14 +99,14 @@ def serialize_for_action(name, result, service_params)
   ...
 end
 
+FAILURE_TYPE_TO_CODE = { contract_validation: "VALIDATION_ERROR", invalid_record: "ACTIVE_RECORD_ERROR",
+                         batch_destroy: "ACTIVE_RECORD_ERROR" }.freeze
+
 def render_error(result)
   failure = result.failure
+  code = failure.is_a?(Hash) && FAILURE_TYPE_TO_CODE[failure[:type]]
 
-  if failure.is_a?(Hash) && failure[:type] == :contract_validation
-    ErrorPresenter.build(code: "VALIDATION_ERROR", messages: failure[:errors])
-  else
-    failure # другие типы ошибок уже приходят в нужном хосту формате — см. хуки ниже
-  end
+  code ? ErrorPresenter.build(code:, messages: failure[:errors]) : failure
 end
 ```
 
@@ -160,9 +168,6 @@ call_hook(:some_hook_name, *args) # => __send__(:some_hook_name, *args), есл�
 
 Используемые имена (вызываются, если определены; иначе — нейтральный дефолт inline):
 
-- `invalid_record_error(record)` — ошибка `record.errors` при create/update/destroy (дефолт: `{ errors: record.errors.messages }`)
-- `foreign_key_error(exception)` / `unexpected_error(exception)` — ошибки исключений в create/update (дефолт: `{ error: exception.message }`)
-- `batch_destroy_error(errors)` — ошибка batch_destroy (дефолт: `{ errors: }`)
 - `after_mutation(model_name)` — вызывается после успешного create/update/batch_destroy (дефолт: ничего)
 - `soft_delete?(model_class)` — discard vs destroy в destroy/batch_destroy (дефолт: `false`, всегда hard delete)
 - `index_response_class` — класс, которым оборачивается `{data:, meta:}` в IndexService (дефолт: `DefineSimpleAction::BaseServices::Responses::IndexResponse`) — переопределите, если у вас уже есть `is_a?`-проверки/подклассы, завязанные на свой класс

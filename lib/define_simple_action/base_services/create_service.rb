@@ -2,6 +2,9 @@
 
 module DefineSimpleAction
   module BaseServices
+    # Failure(type: :invalid_record, errors: {...}) — тип ошибки, не hook, см. BaseService#validate_params
+    # и README ("Contract validation — тип ошибки, не hook"): формат ответа решает хост,
+    # матчингом по :type в точке рендера, а не переопределением hook'а на уровне сервиса.
     class CreateService < BaseService
       def execute(params)
         create_resource(params).fmap { |r| on_success(r) }.or { |r| on_failure(r) }
@@ -17,7 +20,7 @@ module DefineSimpleAction
       end
 
       def on_failure(record)
-        Failure(call_hook(:invalid_record_error, record[:resource]) || { errors: record[:resource].errors.messages })
+        Failure(type: :invalid_record, errors: ::DefineSimpleAction.deep_dup(record[:resource].errors.messages))
       end
 
       def on_success(record)

@@ -2,6 +2,7 @@
 
 module DefineSimpleAction
   module BaseServices
+    # Failure(type: :batch_destroy, errors: [...]) — тип ошибки, не hook, см. CreateService.
     class BatchDestroyService < BaseService
       def execute(params)
         destroy_resource(params).fmap do |result|
@@ -30,7 +31,7 @@ module DefineSimpleAction
       end
 
       def failure_message(errors)
-        Failure(call_hook(:batch_destroy_error, errors) || { errors: })
+        Failure(type: :batch_destroy, errors:)
       end
 
       def method_for_delete

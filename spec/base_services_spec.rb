@@ -332,10 +332,12 @@ RSpec.describe "DefineSimpleAction::BaseServices" do
       expect(mutated).to eq(["Widget"])
     end
 
-    it "returns Failure via #invalid_record_error when save fails" do
+    it "tags a save failure with type: :invalid_record instead of running a call_hook" do
       failing_record_class = Class.new(record_class) do
         def save
           @saved = false
+          @errors_messages = { title: ["can't be blank"] }
+          @saved
         end
       end
       klass = Class.new(service_class) { define_method(:scope) { failing_record_class } }
@@ -343,6 +345,7 @@ RSpec.describe "DefineSimpleAction::BaseServices" do
       result = klass.new(model: record_class).call(title: "Foo")
 
       expect(result).to be_failure
+      expect(result.failure).to eq(type: :invalid_record, errors: { title: ["can't be blank"] })
     end
 
     it "does not rescue exceptions raised from #create_resource — that's a host concern (see README, " \
@@ -392,10 +395,11 @@ RSpec.describe "DefineSimpleAction::BaseServices" do
       expect(mutated).to eq(["Widget"])
     end
 
-    it "returns Failure via #invalid_record_error when update fails" do
+    it "tags an update failure with type: :invalid_record instead of running a call_hook" do
       contract = passing_contract_class
       failing_record = record_class.new
       failing_record.saved = false
+      failing_record.errors_messages = { title: ["can't be blank"] }
       fake_model = fake_model_class
       fake_model.define_singleton_method(:find) { |_id| failing_record }
 
@@ -407,6 +411,7 @@ RSpec.describe "DefineSimpleAction::BaseServices" do
       result = klass.new(model: fake_model_class).call(id: 1, title: "Foo")
 
       expect(result).to be_failure
+      expect(result.failure).to eq(type: :invalid_record, errors: { title: ["can't be blank"] })
     end
   end
 
@@ -439,6 +444,25 @@ RSpec.describe "DefineSimpleAction::BaseServices" do
       expect(result).to be_success
       expect(result.value!.discarded?).to eq(true)
       expect(result.value!.destroyed?).to eq(false)
+    end
+
+    it "tags a destroy failure with type: :invalid_record instead of running a call_hook" do
+      contract = passing_contract_class
+      failing_record = record_class.new
+      def failing_record.destroy
+        @errors_messages = { base: ["can't be destroyed"] }
+        false
+      end
+
+      klass = Class.new(described_class) do
+        define_method(:contract) { contract }
+        define_method(:destroy_resource) { |_params| failing_record }
+      end
+
+      result = klass.new(model: record_class).call(id: 1)
+
+      expect(result).to be_failure
+      expect(result.failure).to eq(type: :invalid_record, errors: { base: ["can't be destroyed"] })
     end
   end
 
@@ -480,7 +504,7 @@ RSpec.describe "DefineSimpleAction::BaseServices" do
       expect(mutated).to eq(["Widget"])
     end
 
-    it "returns Failure via #batch_destroy_error when some records are not destroyed" do
+    it "tags a partial failure with type: :batch_destroy instead of running a call_hook" do
       stuck_record = record_class.new
       def stuck_record.destroy
         # не помечаем как destroyed — имитируем частичный отказ
@@ -498,7 +522,7 @@ RSpec.describe "DefineSimpleAction::BaseServices" do
       result = klass.new(model: record_class).call(ids: [1, 2])
 
       expect(result).to be_failure
-      expect(result.failure).to eq(errors: ["can't be destroyed"])
+      expect(result.failure).to eq(type: :batch_destroy, errors: ["can't be destroyed"])
     end
   end
 

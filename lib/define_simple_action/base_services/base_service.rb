@@ -63,9 +63,8 @@ module DefineSimpleAction
       attr_reader :service_params
 
       # Вызывает метод <tt>name</tt>, если хост его определил (под любым именем,
-      # которое ожидает конкретная точка вызова — invalid_record_error,
-      # foreign_key_error, unexpected_error, batch_destroy_error,
-      # after_mutation, soft_delete?, ...), иначе возвращает nil — дефолт
+      # которое ожидает конкретная точка вызова — after_mutation, soft_delete?,
+      # index_response_class, ...), иначе возвращает nil — дефолт
       # подставляется на месте вызова через <tt>||</tt>. Ни один из этих хуков не
       # декларируется в gem'е как метод: хост создаёт только то, что ему нужно.
       #
