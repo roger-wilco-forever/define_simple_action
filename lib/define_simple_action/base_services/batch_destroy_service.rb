@@ -11,7 +11,7 @@ module DefineSimpleAction
     # ORM-словаря в самом gem'е.
     class BatchDestroyService < BaseService
       def execute(params)
-        destroy_resource(params)
+        destroy_resource(params).or { |not_removed| failure_message(not_removed) }
       end
 
       protected
@@ -26,32 +26,20 @@ module DefineSimpleAction
 
       private
 
+      # Для возможности переопределить этот кусок кода в дочерних классах
       def destroy_resource(params)
-        destroyed(params)
+        records = remove_resources(resource_to_delete(params[:ids]))
+        not_removed = records.reject { |record| removed?(record) }
 
-        return failure_message(errors) if errors.any?
-
-        Success(@destroyed)
+        not_removed.empty? ? Success(records) : Failure(not_removed)
       end
 
-      def destroyed(params)
-        @destroyed ||= remove_resources(resource_to_delete(params[:ids]))
-      end
-
-      def errors
-        not_destroyed.flat_map { |r| r.errors.full_messages } || []
-      end
-
-      def failure_message(errors)
-        Failure(type: :batch_destroy, errors:)
-      end
-
-      def not_destroyed
-        @not_destroyed ||= @destroyed.reject { |r| removed?(r) }
+      def failure_message(not_removed)
+        Failure(type: :batch_destroy, errors: not_removed.flat_map { |record| record.errors.full_messages })
       end
 
       def resource_to_delete(ids)
-        @resource_to_delete ||= model.where(id: ids)
+        model.where(id: ids)
       end
     end
   end
