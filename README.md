@@ -367,6 +367,83 @@ end
 вызывающий не передавал блок вовсе. Если методу нужен блок-дефолт, передавайте его обычным
 аргументом/`proc`, а не через `yield`/`&block`.
 
+## SerializationConcern
+
+`serialize_for_action` в `DefineSimpleAction::Concern` — обязательный хук (`NotImplementedError`
+по умолчанию): gem сознательно не имеет мнения о сериализаторе. `DefineSimpleAction::SerializationConcern` —
+опциональный модуль (тот же принцип, что и `BaseServices` для сервисного слоя): даёт дефолтную
+реализацию `serialize_for_action`, резолвя класс-сериализатор по конвенции имён (как
+`fetch_service_for_action` резолвит сервис) и собирая форму ответа по action'у — но не
+привязываясь ни к какой конкретной библиотеке сериализации:
+
+```ruby
+class BrandsController < ApplicationController
+  include DefineSimpleAction::Concern
+  include DefineSimpleAction::SerializationConcern
+end
+```
+
+### Единственная точка, которая знает о конкретной библиотеке — `#render_resource`
+
+```ruby
+def render_resource(serializer_class, object, options)
+  serializer_class.call(object, options) # дефолт
+end
+```
+
+Дефолт ожидает интерфейс `#call(object, options)`. Blueprinter/ActiveModel::Serializer/Jbuilder
+под это не подходят "из коробки" — замена библиотеки сериализации это переопределение ровно
+этого одного метода, а не переписывание каждого конкретного сериализатора:
+
+```ruby
+class ApplicationService::Base
+  def render_resource(serializer_class, object, options)
+    serializer_class.render_as_json(object, options) # Blueprinter
+  end
+end
+```
+
+`object` — то, что нужно отрендерить: массив (`data` из `IndexResponse` для index-action'а) или
+одиночный ресурс (для остального). Gem не рендерит поэлементно — передаёт коллекцию как есть,
+как это делает `Blueprinter#render_as_json` сам по себе.
+
+### Резолвинг класса-сериализатора — по конвенции, как у сервисов
+
+- в контроллере `set_serializer_name_for_#{name}` — вернуть имя класса строкой;
+- иначе конвенция `"#{prefix}::#{name.camelize}Serializer"` (тот же `prefix`, что резолвит
+  сервис).
+
+`batch_destroy`/`destroy` вообще не резолвят класс — `batch_destroy` строит `{data: ids}` из
+`result.success.map(&:id)`, `destroy` не имеет тела ответа.
+
+### Ошибки — не в gem'е, как и везде
+
+`#render_error(failure, options)` — обязателен к переопределению (`NotImplementedError` по
+умолчанию), как `authorization_data`/`serialize_for_action` в самом `Concern`. Gem не решает
+формат конверта ошибки — `failure` это то, что лежит в `Failure(...)` (см. "Failure(type: ...,
+errors: ...) — тип ошибки, не hook" выше), а во что оно превращается в ответе — целиком хост:
+
+```ruby
+FAILURE_TYPE_TO_CODE = { contract_validation: "VALIDATION_ERROR", invalid_record: "ACTIVE_RECORD_ERROR" }.freeze
+
+def render_error(failure, _options)
+  code = failure.is_a?(Hash) && FAILURE_TYPE_TO_CODE[failure[:type]]
+
+  code ? { code:, messages: failure[:errors] } : { messages: failure }
+end
+```
+
+### Полный список точек расширения
+
+- `render_resource(serializer_class, object, options)` — есть дефолт (`#call`), см. выше.
+- `render_error(failure, options)` — обязателен, дефолта нет.
+- `set_serializer_name_for_#{name}` — опционален, дефолт — конвенция по имени.
+- `serializer_options(name, service_params)` — опционален, дефолт — `{}`.
+- `encode_response(hash)` — опционален, дефолт — `JSON.generate` (Ruby stdlib, не Oj).
+- `fetch_serializer_for_#{name}` — полный обход всего вышеперечисленного: если определён,
+  вызывается напрямую с `(result, service_params)` и его возврат становится телом ответа —
+  ни резолвинг класса, ни `render_error`, ни сборка `{data:, meta:}` не происходят.
+
 ## Зависимости
 
 Gem не зависит от Rails/ActiveSupport — только dry-rb (`dry-monads`, `dry-initializer`,
