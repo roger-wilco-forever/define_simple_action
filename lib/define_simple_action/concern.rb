@@ -56,6 +56,9 @@ require_relative "concern/resource_params"
 # * Concern::ResourceParams — дефолтные <tt>resource_#{action}_params</tt>
 module DefineSimpleAction
   module Concern
+    # Имена CRUD-action'ов, которые понимает <tt>define_simple_actions</tt> "из коробки"
+    # (используются и как ключи CRUD_ACTION_DATA, и в матчинге по имени action'а — см.
+    # Concern::Dispatch#serialize_for_action).
     ACTION_BATCH_DESTROY = "batch_destroy"
     ACTION_CREATE = "create"
     ACTION_DESTROY = "destroy"
@@ -96,6 +99,8 @@ module DefineSimpleAction
       }
     }.freeze
 
+    # <tt>response_formats:</tt> по умолчанию для <tt>define_simple_actions</tt>, если не
+    # передан явно — только JSON.
     DEFAULT_RESPONSE_FORMATS = %i[json].freeze
 
     include Hooks
@@ -103,6 +108,8 @@ module DefineSimpleAction
     include Resolution
     include ResourceParams
 
+    # Домешивает ClassMethods (<tt>.define_simple_actions</tt>) в класс, который включает
+    # Concern — обычный <tt>include</tt>-хук, а не что-то специфичное для этого gem'а.
     def self.included(klass)
       klass.extend(ClassMethods)
     end

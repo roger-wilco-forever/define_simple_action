@@ -75,6 +75,9 @@ module DefineSimpleAction
         "#{prefix}::#{name.capitalize}Contract"
       end
 
+      # Общий для сервисов/контрактов/сериализаторов "неймспейс" резолвинга по конвенции —
+      # константа <tt>PREFIX</tt> в контроллере, если задана, иначе имя класса без суффикса
+      # <tt>Controller</tt> (<tt>Widgets::BrandsController</tt> → <tt>"Widgets::Brands"</tt>).
       def prefix
         if self.class.constants.include?(:PREFIX)
           self.class.const_get(:PREFIX)
@@ -95,6 +98,8 @@ module DefineSimpleAction
         ::DefineSimpleAction.constantize(serializer_name)
       end
 
+      # Конвенция по умолчанию для #fetch_serializer_class_for_action, если хост не
+      # переопределил <tt>set_serializer_name_for_#{name}</tt>.
       def default_serializer_name(name)
         "#{prefix}::#{::DefineSimpleAction::INFLECTOR.camelize(name)}Serializer"
       end

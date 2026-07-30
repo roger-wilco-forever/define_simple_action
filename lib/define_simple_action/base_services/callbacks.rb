@@ -14,6 +14,9 @@ module DefineSimpleAction
     # блоком (instance_exec'ится на сервисе). Цепочки наследуются: подкласс добавляет
     # свои callback'и, не трогая callback'и родителя (см. .dup при первом обращении).
     module Callbacks
+      # Домешивает ClassMethods (.before_execute/.after_execute) в класс, который включает
+      # Callbacks — обычный <tt>include</tt>, без наследования колбэк-цепочек как таковых
+      # (наследование — забота #inherited_callbacks на уровне класса).
       def self.included(base)
         base.extend(ClassMethods)
       end
@@ -37,22 +40,32 @@ module DefineSimpleAction
         end
       end
 
+      # DSL уровня класса — <tt>.before_execute</tt>/<tt>.after_execute</tt> плюс хранилище
+      # зарегистрированных колбэков (с наследованием, см. #inherited_callbacks).
       module ClassMethods
-        # if:/unless: приняты через **guards (а не именованными kwargs if:/unless:),
-        # т.к. `if`/`unless` — зарезервированные слова и их нельзя прочитать обратно
-        # как обычные локальные переменные внутри метода.
+        # Регистрирует один или несколько колбэков (именем метода — можно несколько
+        # символов сразу — или блоком) на <tt>before_execute</tt>. <tt>if:</tt>/<tt>unless:</tt>
+        # приняты через **guards (а не именованными kwargs if:/unless:), т.к. `if`/`unless` —
+        # зарезервированные слова и их нельзя прочитать обратно как обычные локальные
+        # переменные внутри метода.
         def before_execute(*names, **guards, &block)
           register_callback(before_execute_callbacks, names, guards, block)
         end
 
+        # То же самое, что .before_execute, но для <tt>after_execute</tt> (запускается
+        # после #execute, получает финальный Result — успех или неудача).
         def after_execute(*names, **guards, &block)
           register_callback(after_execute_callbacks, names, guards, block)
         end
 
+        # Колбэки <tt>before_execute</tt>, зарегистрированные на этом классе — с учётом
+        # унаследованных от родителя (см. #inherited_callbacks), но без мутации родительского
+        # массива (через <tt>.dup</tt> при первом обращении).
         def before_execute_callbacks
           @before_execute_callbacks ||= inherited_callbacks(:before_execute_callbacks)
         end
 
+        # То же самое, что #before_execute_callbacks, но для <tt>after_execute</tt>.
         def after_execute_callbacks
           @after_execute_callbacks ||= inherited_callbacks(:after_execute_callbacks)
         end

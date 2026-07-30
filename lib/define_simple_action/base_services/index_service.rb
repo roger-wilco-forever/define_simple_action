@@ -2,7 +2,13 @@
 
 module DefineSimpleAction
   module BaseServices
+    # Пагинация (<tt>limit</tt>/<tt>limitless</tt>/<tt>offset</tt>) + сборка ответа через
+    # #build_response. Никакой фильтрации/сортировки по умолчанию — #prepare_query просто
+    # <tt>scope(params)</tt>, без <tt>#ransack</tt> и любой другой query-библиотеки.
     class IndexService < BaseService
+      # Принимает <tt>params</tt> с ключами <tt>limit:</tt>/<tt>limitless:</tt>/<tt>offset:</tt>
+      # (плюс всё, что нужно переопределённому #prepare_query) и всегда возвращает Success —
+      # сама по себе выборка не падает с Failure.
       def execute(params = {})
         Success(build_response(paginate(params)))
       end
@@ -29,6 +35,8 @@ module DefineSimpleAction
         scope(params)
       end
 
+      # Список колонок для <tt>.select(...)</tt> — <tt>nil</tt> означает без ограничения
+      # (весь набор колонок модели).
       def select_fields
         nil
       end

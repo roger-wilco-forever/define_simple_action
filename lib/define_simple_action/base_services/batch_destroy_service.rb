@@ -10,16 +10,23 @@ module DefineSimpleAction
     # достаточно переопределить оба метода в дочернем классе — никакого стороннего
     # ORM-словаря в самом gem'е.
     class BatchDestroyService < BaseService
+      # #destroy_resource(params) удаляет всё, что нашёл #resource_to_delete(params[:ids]),
+      # через #remove_resources; если хоть одна запись не удалилась (по #removed?) —
+      # Failure(type: :batch_destroy, errors: [...]) с full_messages неудалившихся записей.
       def execute(params)
         destroy_resource(params).or { |not_removed| failure_message(not_removed) }
       end
 
       protected
 
+      # Переопределяемая точка удаления — дефолт <tt>relation.destroy_all</tt>. Хосту с
+      # soft-delete-гемом достаточно переопределить на <tt>relation.discard_all</tt>.
       def remove_resources(relation)
         relation.destroy_all
       end
 
+      # Переопределяемая проверка результата — дефолт <tt>resource.destroyed?</tt>.
+      # Переопределяется в паре с #remove_resources (например, на <tt>resource.discarded?</tt>).
       def removed?(resource)
         resource.destroyed?
       end

@@ -16,7 +16,7 @@ Jbuilder, ActiveModel::Serializer — что угодно, см. `#render_resour
 Пока не публикуется в rubygems.org, подключается как git-зависимость:
 
 ```ruby
-gem "define_simple_action", git: "https://github.com/Randewoo-Tech/define_simple_action.git"
+gem "define_simple_action", git: "https://github.com/roger-wilco-forever/define_simple_action.git"
 ```
 
 ## Быстрый старт
@@ -536,8 +536,8 @@ StandardError-перехватчики — то же самое, т.к. в gem'�
 раньше, но убрано вместе с ActiveRecord-осведомлённостью). Если бы у метода в gem'е был свой
 `rescue StandardError` — простой `prepend` + `rescue` вокруг `super` не сработал бы (внутренний
 `rescue` перехватил бы исключение раньше, чем оно дошло бы до прикладного `rescue`); в этом случае
-пришлось бы выносить перехват в отдельный переопределяемый метод. См. Randewoo
-(`app/services/redesign/active_record_error_handling.rb`) за рабочим примером.
+пришлось бы выносить перехват в отдельный переопределяемый метод, который `prepend`-модуль хоста
+уже мог бы переопределить обычным способом (без борьбы с чужим `rescue`).
 
 ## Development
 

@@ -2,6 +2,8 @@
 
 module DefineSimpleAction
   module Concern
+    # DSL уровня класса, которым домешивается <tt>.define_simple_actions</tt> в контроллер,
+    # включивший Concern (см. <tt>Concern.included</tt>).
     module ClassMethods
       # Создаёт action, если он не определён в классе
       #

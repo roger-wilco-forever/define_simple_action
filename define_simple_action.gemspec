@@ -12,7 +12,7 @@ Gem::Specification.new do |spec|
   spec.description = 'Dynamically defines index/show/create/update/destroy (and custom) controller actions ' \
                       'that resolve service, contract and params by convention. Serialization, caching and ' \
                       'authorization are left to the host app via overridable hooks.'
-  spec.homepage = 'https://github.com/Randewoo-Tech/define_simple_action'
+  spec.homepage = 'https://github.com/roger-wilco-forever/define_simple_action'
   spec.required_ruby_version = '>= 3.2.0'
   spec.license = 'MIT'
 
@@ -32,8 +32,8 @@ Gem::Specification.new do |spec|
   spec.require_paths = ['lib']
 
   # Никакой Rails/ActiveSupport-зависимости: camelize/underscore — dry-inflector,
-  # constantize — Object#const_get (см. DefineSimpleAction.constantize), deep_symbolize_keys/
-  # to_boolean — dry-transformer, plumbing BaseServices — dry-monads/dry-initializer/dry-types.
+  # constantize — Object#const_get (см. DefineSimpleAction.constantize), to_boolean —
+  # dry-transformer, plumbing BaseServices — dry-monads/dry-initializer/dry-types.
   # ActiveRecord/ransack/discard — не зависимости и не duck-typed проверки в gem'е вообще:
   # хост подключает их поведение сам (монкипатчем поверх классов gem'а), см. README.
   spec.add_dependency 'dry-inflector', '~> 1.0'

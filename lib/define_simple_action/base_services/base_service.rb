@@ -31,12 +31,20 @@ module DefineSimpleAction
       option :model, optional: true, reader: :private
       option :validation_contract_name, optional: true, reader: :private
 
+      # Дефолтный размер страницы для IndexService, если хост не передал <tt>limit:</tt>.
       PAGE_LENGTH = 100
 
+      # Резолвится в Concern#fetch_service_for_action; <tt>params</tt> — kwargs конструктора
+      # (<tt>authorization_data:</tt>/<tt>model:</tt>/<tt>notify_data:</tt>/
+      # <tt>validation_contract_name:</tt>) плюс <tt>params:</tt> — то, что передаётся в #execute.
       def self.call(params)
         new(**params).execute(params[:params])
       end
 
+      # validate_params → before_execute-цепочка → #instrumented_execute → after_execute-цепочка.
+      # Любой шаг может остановить цепочку Failure'ом (через do-нотацию/yield) — #execute и
+      # оставшиеся колбэки в этом случае не вызываются, но after_execute всё равно получает
+      # финальный Result (см. Callbacks#run_after_execute_callbacks).
       def call(params)
         yield(validate_params(params))
         @service_params = params
@@ -60,6 +68,8 @@ module DefineSimpleAction
 
       protected
 
+      # Params, с которыми был вызван #call (после dry-validation, но до
+      # before_execute/#execute) — доступны дочерним сервисам и колбэкам.
       attr_reader :service_params
 
       # Оборачивает #execute dry-monitor'ным событием "define_simple_action.execute"
@@ -73,6 +83,9 @@ module DefineSimpleAction
         end
       end
 
+      # Резолвит dry-validation контракт для #validate_params (см. описание порядка выше
+      # класса). Бросает NotImplementedError, если контракт не нашёлся ни одним из способов —
+      # это ошибка конфигурации хоста, а не рантайм-ошибка запроса.
       def contract
         validation_contract = validation_contract_name && ::DefineSimpleAction.safe_constantize(validation_contract_name)
         validation_contract ||= ::DefineSimpleAction.safe_constantize(self.class.to_s.gsub(/Service\z/, 'Contract'))
@@ -87,18 +100,21 @@ module DefineSimpleAction
         validation_contract
       end
 
+      # Достаётся из <tt>authorization_data[:current_user]</tt> (память — данные авторизации
+      # не меняются в рамках одного вызова сервиса). <tt>nil</tt>, если <tt>authorization_data</tt>
+      # не задан или не содержит <tt>:current_user</tt> — хост сам решает, что это означает.
       def current_user
         return @current_user if defined?(@current_user)
 
         @current_user = authorization_data&.fetch(:current_user, nil)
       end
 
+      # Точка отсчёта для запросов к модели (<tt>model.find(...)</tt>,
+      # <tt>scope(params).where(...)</tt> и т.д. в конкретных сервисах). Дефолт — просто
+      # <tt>model</tt>; переопределяется, когда выборка должна учитывать <tt>params</tt>
+      # (авторизацию, вложенность ресурса и т.д.).
       def scope(_params = nil)
         model
-      end
-
-      def transform_result(result)
-        Success(result)
       end
     end
   end

@@ -46,10 +46,16 @@ module DefineSimpleAction
         raise NotImplementedError, "#{self.class} must implement #render_error"
       end
 
+      # Опции, которые #render_resource получит третьим аргументом. Дефолт — пустой хэш;
+      # переопределяется, когда сериализатору нужен контекст (текущий пользователь,
+      # флаги подключения ассоциаций и т.д.).
       def serializer_options(_name, _service_params)
         {}
       end
 
+      # Кодирует итоговый хэш ответа (из #render_resource/#render_error) в JSON-строку.
+      # Дефолт — стандартный <tt>JSON.generate</tt> (Ruby stdlib); переопределяется, если
+      # хост хочет свой JSON-энкодер (например, Oj).
       def encode_response(hash)
         ::JSON.generate(hash)
       end
