@@ -180,12 +180,14 @@ RSpec.describe DefineSimpleAction::Concern do
   end
 
   describe "#resource_index_params" do
-    it "builds ransack-ready params with default ordering" do
-      controller = controller_class.new(params: { q: { title_cont: "foo" }, limit: "10" })
+    it "symbolizes and forwards q: as-is — no Ransack, no default sort injected (host's job)" do
+      q = { "title_cont" => "foo" }
+      q.define_singleton_method(:to_unsafe_h) { q }
+      controller = controller_class.new(params: { q:, limit: "10" })
 
       expect(controller.resource_index_params).to eq(
         limit: "10",
-        q: { title_cont: "foo", s: "id asc" }
+        q: { title_cont: "foo" }
       )
     end
   end

@@ -472,6 +472,10 @@ Gem не зависит от Rails/ActiveSupport — только dry-rb (`dry-m
 - `IndexService#prepare_query` по умолчанию — просто `scope(params)`, без вызова `#ransack`.
 - `Create/Update/BatchDestroyService` не перехватывают вообще никаких исключений — что
   бы ни бросил `#create_resource`/`model.find`/`destroy_all`, оно пробрасывается наружу как есть.
+- `Concern#resource_index_params` тоже без Ransack: `q:` — нейтральный контейнер
+  (`deep_symbolize_keys(params[:q]&.to_unsafe_h)`), без автоподстановки сортировки
+  (`q[:s] ||= "id asc"`) и без метода с говорящим именем `compacted_ransack_params` —
+  gem его прокидывает как есть, ничего не зная про Ransack-синтаксис сортировки/фильтрации.
 
 Если хост использует ActiveRecord/Ransack/discard, это подключается монкипатчем
 (`Module#prepend`) поверх классов gem'а — это код хоста, не gem'а:
@@ -493,6 +497,21 @@ module ActiveRecordCreateErrorHandling
     Failure(foreign_key_error(e))
   rescue StandardError => e
     Failure(unexpected_error(e))
+  end
+end
+
+# Controller-концерн — обычный override (не prepend: сам концерн ничего не декларирует,
+# просто добавьте метод в свой ApplicationController-концерн поверх `include DefineSimpleAction::Concern`):
+module RansackIndexParams
+  def default_ordering
+    "id asc"
+  end
+
+  def resource_index_params
+    q = deep_symbolize_keys(params[:q]&.to_unsafe_h) || {}
+    q[:s] ||= default_ordering if default_ordering
+
+    { limit: params[:limit], limitless: params[:limitless], offset: params[:offset], q: }.compact
   end
 end
 

@@ -3,17 +3,12 @@
 module DefineSimpleAction
   module Concern
     # Дефолтные <tt>resource_#{action}_params</tt> по конвенции CRUD_ACTION_DATA
-    # (ransack-совместимый index/show, deep_symbolize_keys вместо ActiveSupport).
+    # (deep_symbolize_keys вместо ActiveSupport). Никакого Ransack — как и в BaseServices
+    # (см. README, "ActiveRecord/Ransack/discard — не в gem'е вообще"): <tt>q:</tt> здесь —
+    # нейтральный контейнер для произвольных query-параметров, который gem просто
+    # прокидывает дальше символизированным, не придавая ему ransack-семантики (сортировка,
+    # `.ransack(...)` и т.д. — целиком дело хоста, как и `prepare_query` в IndexService).
     module ResourceParams
-      def default_ordering
-        "id asc"
-      end
-
-      def compacted_ransack_params(params)
-        ransack_params = (params[:q] || {}).to_enum&.to_h
-        deep_symbolize_keys(ransack_params)&.compact
-      end
-
       def resource_batch_destroy_params
         { ids: params[:ids] }
       end
@@ -27,14 +22,11 @@ module DefineSimpleAction
       end
 
       def resource_index_params
-        q = compacted_ransack_params(params)
-        q[:s] ||= default_ordering if default_ordering
-
         {
           limit: params[:limit],
           limitless: params[:limitless],
           offset: params[:offset],
-          q:
+          q: deep_symbolize_keys(params[:q]&.to_unsafe_h)
         }.compact
       end
 
