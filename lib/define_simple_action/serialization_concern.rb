@@ -56,6 +56,7 @@ module DefineSimpleAction
 
     # Класс-сериализатор для action'а. Определяется:
     # * в контроллере <tt>set_serializer_name_for_#{name}</tt> — возвращает имя класса строкой
+    # * в контроллере <tt>default_serializer_name</tt> — определяет класс напрямую для всех action'ов
     # * иначе конвенция <tt>"#{prefix}::#{name.camelize}Serializer"</tt>
     def fetch_serializer_class_for_action(name)
       method_name = :"set_serializer_name_for_#{name}"
