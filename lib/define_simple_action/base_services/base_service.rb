@@ -10,12 +10,12 @@ module DefineSimpleAction
     # notify/notify_data — НЕ зона ответственности gem'а: concern по-прежнему нейтрально
     # прокидывает notify_data: в service_params (см. Concern#fetch_service_for_action),
     # но сам gem его не объявляет и не интерпретирует. Хосту, которому нужен notify,
-    # достаточно публичных точек расширения (option, after_execute, call_hook) — см.
-    # README, раздел "Notify — не в gem'е".
+    # достаточно публичных точек расширения (option, after_execute) — см. README,
+    # раздел "Notify — не в gem'е".
     #
-    # Хуки (форматы ошибок, инвалидация кэша, soft-delete-конвенция и т.д.) в gem'е
-    # не декларируются — см. #call_hook. Хост определяет только те, что ему реально
-    # нужны, под любым именем, которое ожидает точка вызова (см. README).
+    # Форматы ошибок, инвалидация кэша, soft-delete-конвенция, выбор response-класса и
+    # т.д. в gem'е не декларируются вообще — это либо обычные переопределяемые методы
+    # (create_resource/remove_resource/build_response/...), либо after_execute (см. README).
     #
     # #validate_params — особый случай: это не hook (нечего вызывать до старта execute),
     # а тип ошибки прямо в Failure — Failure(type: :contract_validation, errors: {...}).
@@ -61,19 +61,6 @@ module DefineSimpleAction
       protected
 
       attr_reader :service_params
-
-      # Вызывает метод <tt>name</tt>, если хост его определил (под любым именем, которое
-      # ожидает конкретная точка вызова — index_response_class, ...), иначе возвращает nil — дефолт
-      # подставляется на месте вызова через <tt>||</tt>. Ни один из этих хуков не
-      # декларируется в gem'е как метод: хост создаёт только то, что ему нужно.
-      #
-      # ВАЖНО: сюда специально не завели blockдефолт (<tt>yield</tt>/<tt>&block</tt>) —
-      # класс подключает Dry::Monads[:do], который автоматически оборачивает КАЖДЫЙ
-      # метод класса в do-нотацию; внутри такого метода "yield"/"block_given?"
-      # перехватывается do-machinery (ожидающей монаду), а не блоком вызывающего.
-      def call_hook(name, *args)
-        __send__(name, *args) if respond_to?(name, true)
-      end
 
       # Оборачивает #execute dry-monitor'ным событием "define_simple_action.execute"
       # (service, model, success, time) — публикуется всегда; подписка (метрики, логи,

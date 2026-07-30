@@ -4,12 +4,11 @@ module DefineSimpleAction
   module BaseServices
     # Rails-подобные before_execute/after_execute callback-цепочки вокруг #execute.
     #
-    # В отличие от call_hook (один опциональный метод на точку расширения, см.
-    # BaseService#call_hook), это полноценные цепочки: несколько callback'ов на одну
-    # точку, с условиями (:if/:unless) и остановкой цепочки. Раз gem построен на
-    # dry-monads, остановка — это Failure, а не Rails-овский throw(:abort): если
-    # before_execute-callback возвращает Failure, она становится результатом #call,
-    # #execute и остальные before_execute/after_execute не вызываются.
+    # Полноценные цепочки: несколько callback'ов на одну точку, с условиями (:if/:unless)
+    # и остановкой цепочки. Раз gem построен на dry-monads, остановка — это Failure, а не
+    # Rails-овский throw(:abort): если before_execute-callback возвращает Failure, она
+    # становится результатом #call, #execute и остальные before_execute/after_execute не
+    # вызываются.
     #
     # Callback можно задать именем метода хоста (символ, может быть несколько) или
     # блоком (instance_exec'ится на сервисе). Цепочки наследуются: подкласс добавляет

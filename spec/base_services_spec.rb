@@ -138,7 +138,7 @@ RSpec.describe "DefineSimpleAction::BaseServices" do
       expect(result).to be_success
     end
 
-    it "lets a host rebuild notify entirely on public extension points (option/after_execute/call_hook)" do
+    it "lets a host rebuild notify entirely on public extension points (option/after_execute)" do
       calls = []
       notifiable = Module.new do
         def self.included(base)
@@ -153,7 +153,7 @@ RSpec.describe "DefineSimpleAction::BaseServices" do
         end
 
         def dispatch_notify(result)
-          call_hook(:notify, result.value!)
+          notify(result.value!)
         end
       end
 
@@ -171,21 +171,6 @@ RSpec.describe "DefineSimpleAction::BaseServices" do
 
       klass.new(model: "Widget").call({})
       expect(calls).to be_empty
-    end
-
-    it "#call_hook returns nil for a hook the host never defined (no stub declared in the gem)" do
-      service = service_class.new(model: "Widget")
-
-      expect(service.send(:call_hook, :some_hook_the_host_never_defined)).to be_nil
-      expect(service.class.private_method_defined?(:some_custom_hook)).to eq(false)
-    end
-
-    it "#call_hook dispatches to whatever method the host defines under that name" do
-      klass = Class.new(service_class) do
-        define_method(:some_custom_hook) { "CustomResponse" }
-      end
-
-      expect(klass.new(model: "Widget").send(:call_hook, :some_custom_hook)).to eq("CustomResponse")
     end
 
     it "raises when no validation contract can be resolved by naming convention" do
