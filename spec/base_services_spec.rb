@@ -176,17 +176,16 @@ RSpec.describe "DefineSimpleAction::BaseServices" do
     it "#call_hook returns nil for a hook the host never defined (no stub declared in the gem)" do
       service = service_class.new(model: "Widget")
 
-      expect(service.send(:call_hook, :index_response_class)).to be_nil
       expect(service.send(:call_hook, :some_hook_the_host_never_defined)).to be_nil
-      expect(service.class.private_method_defined?(:index_response_class)).to eq(false)
+      expect(service.class.private_method_defined?(:some_custom_hook)).to eq(false)
     end
 
     it "#call_hook dispatches to whatever method the host defines under that name" do
       klass = Class.new(service_class) do
-        define_method(:index_response_class) { "CustomResponse" }
+        define_method(:some_custom_hook) { "CustomResponse" }
       end
 
-      expect(klass.new(model: "Widget").send(:call_hook, :index_response_class)).to eq("CustomResponse")
+      expect(klass.new(model: "Widget").send(:call_hook, :some_custom_hook)).to eq("CustomResponse")
     end
 
     it "raises when no validation contract can be resolved by naming convention" do
@@ -598,7 +597,7 @@ RSpec.describe "DefineSimpleAction::BaseServices" do
       expect(response.meta.offset).to eq(0)
     end
 
-    it "lets a host override #index_response_class to preserve its own type/is_a? checks" do
+    it "lets a host override #build_response to use its own response class and/or transform the resource" do
       custom_response_class = Class.new(DefineSimpleAction::BaseServices::Responses::IndexResponse)
       relation = relation_class.new(%w[a])
       contract = passing_contract_class
@@ -606,12 +605,19 @@ RSpec.describe "DefineSimpleAction::BaseServices" do
       klass = Class.new(described_class) do
         define_method(:contract) { contract }
         define_method(:scope) { |_params| relation }
-        define_method(:index_response_class) { custom_response_class }
+
+        define_method(:build_response) do |pagination|
+          custom_response_class.new(
+            data: pagination[:resource].map(&:upcase),
+            meta: pagination.slice(:count, :limit, :offset)
+          )
+        end
       end
 
       result = klass.new(model: record_class).call(limit: 1, offset: 0, q: {})
 
       expect(result.value!).to be_a(custom_response_class)
+      expect(result.value!.data).to eq(%w[A])
     end
 
     it "#prepare_query defaults to plain #scope(params) — no Ransack call, that's a host concern" do

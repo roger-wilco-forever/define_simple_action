@@ -166,15 +166,13 @@ call_hook(:some_hook_name, *args) # => __send__(:some_hook_name, *args), есл�
 только те хуки, которые ему реально нужны в его ситуации — ничего не обязательно
 переопределять заранее и нечего "затирать" пустой реализацией.
 
-Используемые имена (вызываются, если определены; иначе — нейтральный дефолт inline):
-
-- `index_response_class` — класс, которым оборачивается `{data:, meta:}` в IndexService (дефолт: `DefineSimpleAction::BaseServices::Responses::IndexResponse`) — переопределите, если у вас уже есть `is_a?`-проверки/подклассы, завязанные на свой класс
-
-`notify`/`notify_data`, `after_mutation` и удаление (`soft_delete?`) в этом списке **нет** — см.
-разделы "Notify — не в gem'е", "after_mutation — не в gem'е" и "Удаление — не hook" ниже.
-
-Ничего из этого не обязательно определять: если хук не нужен в конкретном сервисе — просто
-не создавайте метод с этим именем, `call_hook` вернёт `nil`, и сработает дефолт.
+Сам gem `call_hook` больше никуда изнутри не зовёт — ни одной точки расширения на его
+дефолтные имена (`index_response_class`, `soft_delete?`, `after_mutation`, `notify`) в коде
+gem'а не осталось, см. разделы "IndexService#build_response — не hook", "Удаление — не hook",
+"after_mutation — не в gem'е" и "Notify — не в gem'е" ниже — все они теперь либо обычные
+переопределяемые методы, либо `after_execute`. `call_hook` остаётся публичным методом
+`BaseService` как готовый примитив для **собственных** точек расширения хоста (пример — вызов
+`notify` из host-side `Notifiable`-модуля в разделе "Notify — не в gem'е").
 
 ### Удаление — не hook, обычный переопределяемый метод
 
@@ -205,6 +203,48 @@ class BrandsController::BatchDestroyService < DefineSimpleAction::BaseServices::
 
   def removed?(resource)
     resource.discarded?
+  end
+end
+```
+
+### IndexService#build_response — не hook, обычный переопределяемый метод
+
+Раньше в `IndexService#execute` было три отдельных места: `transform_result` (трансформация
+`resource` через do-нотацию), `call_hook(:index_response_class)` (выбор класса ответа) и
+инлайновая сборка `{data:, meta:}`. Теперь это один переопределяемый метод —
+`build_response(pagination)`, где `pagination` — хэш `{resource:, count:, limit:, offset:}` из
+`#paginate`. Дефолт:
+
+```ruby
+def build_response(pagination)
+  DefineSimpleAction::BaseServices::Responses::IndexResponse.new(
+    data: pagination[:resource],
+    meta: pagination.slice(:count, :limit, :offset)
+  )
+end
+```
+
+Хосту, которому нужен свой класс ответа и/или трансформация `resource`, достаточно
+переопределить `build_response` целиком — трансформировать `pagination[:resource]` и вызвать
+`super` с уже готовым классом/результатом:
+
+```ruby
+class ApplicationService::Index < DefineSimpleAction::BaseServices::IndexService
+  protected
+
+  def build_response(pagination)
+    ApplicationService::Responses::IndexResponse.new(
+      data: pagination[:resource],
+      meta: pagination.slice(:count, :limit, :offset)
+    )
+  end
+end
+
+class BrandsController::IndexService < ApplicationService::Index
+  protected
+
+  def build_response(pagination)
+    super(pagination.merge(resource: pagination[:resource].map { |r| BrandEntity.new(r) }))
   end
 end
 ```
