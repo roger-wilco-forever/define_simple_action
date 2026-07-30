@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-RSpec.describe DefineSimpleAction::SerializationConcern do
+RSpec.describe "DefineSimpleAction::Concern's default #serialize_for_action" do
   # Двойник dry-monads Result — не тянем dry-monads в тесты Concern-слоя (см.
   # define_simple_action_spec.rb, тот же подход для DefineSimpleAction::Concern).
   let(:result_class) do
@@ -22,7 +22,6 @@ RSpec.describe DefineSimpleAction::SerializationConcern do
   let(:controller_class) do
     Class.new do
       include DefineSimpleAction::Concern
-      include DefineSimpleAction::SerializationConcern
 
       def prefix
         "Widgets"

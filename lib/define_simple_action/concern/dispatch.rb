@@ -31,6 +31,25 @@ module DefineSimpleAction
 
         [serialize_for_action(name, result, service_params), fetch_status_for_action(name, result)]
       end
+
+      # Дефолтная сериализация: резолвит класс-сериализатор по конвенции имён (как
+      # fetch_service_for_action резолвит сервис) и рендерит через #render_resource/#render_error
+      # (см. Hooks). Форма ответа ({data:, meta:} для index, {data: [id, ...]} для batch_destroy
+      # или что угодно ещё) — целиком зона сериализатора, а не gem'а: gem передаёт ему "сырое"
+      # значение результата (result.value!) как есть — IndexResponse (data:/meta:) для index,
+      # массив снятых записей для batch_destroy, ресурс для остального. Полный обход всего
+      # этого — <tt>fetch_serializer_for_#{name}</tt> в контроллере.
+      def serialize_for_action(name, result, service_params)
+        method_name = :"fetch_serializer_for_#{name}"
+        return __send__(method_name, result, service_params) if respond_to?(method_name, true)
+
+        options = serializer_options(name, service_params)
+
+        return encode_response(render_error(result.failure, options)) if result.failure?
+        return if name == ACTION_DESTROY
+
+        encode_response(render_resource(fetch_serializer_class_for_action(name), result.value!, options))
+      end
     end
   end
 end

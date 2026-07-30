@@ -27,9 +27,20 @@ require_relative "concern/resource_params"
 #
 # Хост-приложение обязано реализовать (иначе — NotImplementedError):
 # * <tt>authorization_data</tt> — данные авторизации, передаваемые в сервис
-# * <tt>serialize_for_action(name, result, service_params)</tt> — сериализация результата сервиса
+# * <tt>render_error(failure, options)</tt> — конверт ошибки; gem сознательно не решает
+#   формат (см. README, "Failure(type: ..., errors: ...) — тип ошибки, не hook")
 #
-# Хост-приложение может переопределить (есть дефолт):
+# <tt>serialize_for_action</tt> — уже не голый hook, а рабочий дефолт: резолвит
+# класс-сериализатор по конвенции имён (как резолвится сервис) и рендерит через
+# <tt>render_resource</tt>/<tt>render_error</tt>. Хост-приложение может переопределить (есть дефолт):
+# * <tt>render_resource(serializer_class, object, options)</tt> — единственная точка, которая
+#   знает о конкретной библиотеке сериализации (Blueprinter и т.д.), дефолт — `#call(object, options)`
+# * <tt>set_serializer_name_for_#{action}</tt> / <tt>default_serializer_name(name)</tt> — имя класса-сериализатора,
+#   дефолт — конвенция <tt>"#{prefix}::#{action.camelize}Serializer"</tt>
+# * <tt>serializer_options(name, service_params)</tt> — опции, которые получает `render_resource`, дефолт — `{}`
+# * <tt>encode_response(hash)</tt> — кодирование финального хэша в JSON, дефолт — `JSON.generate`
+# * <tt>fetch_serializer_for_#{action}(result, service_params)</tt> — полный обход
+#   вышеперечисленного, если определён
 # * <tt>around_action_execution(**) { ... }</tt> — обёртка вызова (например, кэш), дефолт — просто yield
 # * <tt>fallback_service_namespace</tt> — неймспейс базовых сервисов, дефолт — nil (без фоллбэка)
 # * <tt>make_response_#{format}</tt> — рендер конкретного формата ответа, из коробки есть только :json
@@ -38,8 +49,10 @@ require_relative "concern/resource_params"
 # хоста — как включал <tt>DefineSimpleAction::Concern</tt>, так и продолжает):
 # * Concern::ClassMethods — DSL <tt>define_simple_actions</tt> на уровне класса
 # * Concern::Hooks — точки расширения (см. выше)
-# * Concern::Dispatch — формат → params → сервис → сериализация → рендер
-# * Concern::Resolution — резолвинг params/сервиса/статуса/контракта по конвенции имён
+# * Concern::Dispatch — формат → params → сервис → сериализация (включая дефолтный
+#   <tt>serialize_for_action</tt>) → рендер
+# * Concern::Resolution — резолвинг params/сервиса/статуса/контракта/сериализатора по
+#   конвенции имён
 # * Concern::ResourceParams — дефолтные <tt>resource_#{action}_params</tt>
 module DefineSimpleAction
   module Concern

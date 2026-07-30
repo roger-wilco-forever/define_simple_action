@@ -41,16 +41,6 @@ module DefineSimpleAction
       def resource_update_params
         resource_params.merge(id: Integer(params[:id]))
       end
-
-      # dry-transformer вместо ActiveSupport Hash#deep_symbolize_keys; сам метод не
-      # принимает nil. Сам gem его не использует нигде в resource_#{action}_params
-      # (см. выше) — оставлен как утилита для хостовых override'ов (например, q:
-      # в собственном resource_index_params, см. README).
-      def deep_symbolize_keys(value)
-        return value if value.nil?
-
-        ::Dry::Transformer::HashTransformations.deep_symbolize_keys(value)
-      end
     end
   end
 end

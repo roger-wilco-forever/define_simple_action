@@ -39,5 +39,4 @@ module DefineSimpleAction
 end
 
 require_relative 'define_simple_action/concern'
-require_relative 'define_simple_action/serialization_concern'
 require_relative 'define_simple_action/base_services'

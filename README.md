@@ -5,9 +5,11 @@ Concern для Rails-контроллеров, который динамичес
 произвольные кастомные) по конвенции имён — резолвит сервис, контракт валидации и params
 для каждого action'а, вызывает сервис и передаёт результат в сериализацию/рендер.
 
-Gem сознательно не имеет мнения о том, чем сериализуется ответ, как кэшируется результат
-и откуда берутся данные авторизации — это точки расширения (хуки), которые обязано
-реализовать хост-приложение.
+Gem сознательно не имеет мнения о том, какой библиотекой сериализуется ответ (Blueprinter,
+Jbuilder, ActiveModel::Serializer — что угодно, см. `#render_resource` ниже), как кэшируется
+результат и откуда берутся данные авторизации — это точки расширения (хуки), которые обязано
+реализовать хост-приложение. Резолвинг сериализатора по конвенции имён (как резолвится сервис)
+и сама диспетчеризация success/failure уже есть из коробки.
 
 ## Установка
 
@@ -40,13 +42,21 @@ class BrandsController < ApplicationController
     { current_user: current_user }
   end
 
-  def serialize_for_action(name, result, service_params)
-    return ErrorBlueprint.render(result) if result.failure?
+  def render_error(failure, _options)
+    ErrorBlueprint.render_as_json(failure)
+  end
 
-    BrandBlueprint.render_as_json(result.value!)
+  # --- опционально: своя библиотека сериализации вместо дефолтного #call(object, options) ---
+
+  def render_resource(serializer_class, object, options)
+    serializer_class.render_as_json(object, options) # Blueprinter
   end
 end
 ```
+
+Класс-сериализатор резолвится по конвенции, как и сервис — для `show` gem ищет
+`BrandsController::ShowSerializer`, для `index` — `BrandsController::IndexSerializer` и т.д.
+(см. "Резолвинг класса-сериализатора" ниже).
 
 ## Контракт с сервисным слоем
 
@@ -89,21 +99,15 @@ Result/dry-monads: `Success`/`Failure`).
 
 Gem не вызывает никакой хостовый метод для форматирования этих ошибок и не знает, во что они
 должны превратиться в ответе (код ошибки, конверт и т.д.). Матчинг по `:type` и перевод в
-конкретный формат ответа — целиком на хосте,
-в точке, где он рендерит `Failure` (например, `serialize_for_action` в
-`DefineSimpleAction::Concern`), а не на уровне сервиса:
+конкретный формат ответа — целиком на хосте, в точке, где рендерится `Failure` — это
+`render_error(failure, options)`, единственный по-настоящему обязательный хук серилизации
+(см. "Точки расширения (хуки)" и "Сериализация" ниже), а не на уровне сервиса:
 
 ```ruby
-def serialize_for_action(name, result, service_params)
-  return render_error(result) if result.failure?
-  ...
-end
-
 FAILURE_TYPE_TO_CODE = { contract_validation: "VALIDATION_ERROR", invalid_record: "ACTIVE_RECORD_ERROR",
                          batch_destroy: "ACTIVE_RECORD_ERROR" }.freeze
 
-def render_error(result)
-  failure = result.failure
+def render_error(failure, _options)
   code = failure.is_a?(Hash) && FAILURE_TYPE_TO_CODE[failure[:type]]
 
   code ? ErrorPresenter.build(code:, messages: failure[:errors]) : failure
@@ -115,9 +119,9 @@ end
 Обязательные (по умолчанию — `NotImplementedError`):
 
 - `authorization_data` — данные авторизации, передаются в сервис.
-- `serialize_for_action(name, result, service_params)` — превращает результат сервиса
-  в тело ответа. Gem намеренно не привязан к конкретному сериализатору (Blueprinter,
-  Jbuilder, ActiveModel::Serializer — что угодно).
+- `render_error(failure, options)` — конверт ошибки. Gem формирует `Failure(type:, errors:)`
+  сам (см. выше), но не решает, во что это превращается в ответе — код ошибки, конверт и
+  т.д. целиком на хосте.
 
 Опциональные (есть дефолт, который можно переопределить):
 
@@ -131,6 +135,15 @@ end
 - `make_response_#{format}` — рендер конкретного формата ответа. Из коробки есть только
   `make_response_json`. Для дополнительных форматов (например, `csv`) добавьте свой
   `make_response_csv` и передайте `response_formats: %i[json csv]`.
+- `render_resource(serializer_class, object, options)` — единственная точка, которая знает
+  о конкретной библиотеке сериализации (Blueprinter/Jbuilder/ActiveModel::Serializer —
+  что угодно). Дефолт ожидает интерфейс `#call(object, options)`. См. раздел "Сериализация"
+  ниже — полный список точек расширения дефолтного `serialize_for_action`.
+
+`serialize_for_action(name, result, service_params)` сам по себе больше не hook — рабочий
+дефолт резолвит класс-сериализатор по конвенции имён и рендерит через `render_resource`/
+`render_error` выше (см. "Сериализация"). Переопределять его целиком не нужно, если не
+требуется обойти весь механизм — для этого есть `fetch_serializer_for_#{action}`.
 
 ## Переопределяемые методы (по конвенции, без объявления хуков)
 
@@ -367,19 +380,16 @@ end
 вызывающий не передавал блок вовсе. Если методу нужен блок-дефолт, передавайте его обычным
 аргументом/`proc`, а не через `yield`/`&block`.
 
-## SerializationConcern
+## Сериализация — дефолтный `serialize_for_action`
 
-`serialize_for_action` в `DefineSimpleAction::Concern` — обязательный хук (`NotImplementedError`
-по умолчанию): gem сознательно не имеет мнения о сериализаторе. `DefineSimpleAction::SerializationConcern` —
-опциональный модуль (тот же принцип, что и `BaseServices` для сервисного слоя): даёт дефолтную
-реализацию `serialize_for_action`, которая резолвит класс-сериализатор по конвенции имён (как
-`fetch_service_for_action` резолвит сервис) и отдаёт ему результат как есть — но форму ответа
-(`{data:, meta:}`, `{data: ids}` или что угодно ещё) не решает вообще, это зона сериализатора:
+`DefineSimpleAction::Concern` уже даёт рабочий дефолт `serialize_for_action`: резолвит
+класс-сериализатор по конвенции имён (как `fetch_service_for_action` резолвит сервис) и
+отдаёт ему результат как есть — но форму ответа (`{data:, meta:}`, `{data: ids}` или что
+угодно ещё) не решает вообще, это зона сериализатора:
 
 ```ruby
 class BrandsController < ApplicationController
   include DefineSimpleAction::Concern
-  include DefineSimpleAction::SerializationConcern
 end
 ```
 
@@ -422,7 +432,7 @@ batch_destroy — решение самого `Widgets::BatchDestroySerializer`,
 ### Ошибки — не в gem'е, как и везде
 
 `#render_error(failure, options)` — обязателен к переопределению (`NotImplementedError` по
-умолчанию), как `authorization_data`/`serialize_for_action` в самом `Concern`. Gem не решает
+умолчанию), как `authorization_data`. Gem не решает
 формат конверта ошибки — `failure` это то, что лежит в `Failure(...)` (см. "Failure(type: ...,
 errors: ...) — тип ошибки, не hook" выше), а во что оно превращается в ответе — целиком хост:
 
@@ -455,8 +465,6 @@ Gem не зависит от Rails/ActiveSupport — только dry-rb (`dry-m
 - `camelize`/`underscore` — `Dry::Inflector`, а не `ActiveSupport::Inflector`.
 - `constantize`/`safe_constantize` — свои, `DefineSimpleAction.constantize`/`.safe_constantize`
   (обёртка над `Object#const_get`), а не ActiveSupport-монкипатч `String#constantize`.
-- `deep_symbolize_keys` — `Dry::Transformer::HashTransformations.deep_symbolize_keys`, а не
-  `Hash#deep_symbolize_keys`.
 - `ActiveModel::Type::Boolean` — `Dry::Transformer::Coercions.to_boolean` (с `rescue KeyError`
   на нераспознанных значениях), а не `activemodel`.
 
@@ -476,8 +484,9 @@ Gem не зависит от Rails/ActiveSupport — только dry-rb (`dry-m
   строят `q:` вообще: ни один сервис gem'а (`IndexService#prepare_query`, `ShowService#execute`,
   `ShowBySlugService#execute`) сам `params[:q]` не читает — `q:` (и тем более Ransack-конвенция
   сортировки `q[:s]`) нужен только тем хостам, которые сами подключили Ransack/фильтрацию, так
-  что строить и прокидывать пустой контейнер незачем. `#deep_symbolize_keys` остаётся публичной
-  утилитой — пригодится в собственном override хоста (см. пример ниже).
+  что строить и прокидывать пустой контейнер незачем. Хосту, которому нужен `q:`, ничто не
+  мешает воспользоваться обычным `Hash#deep_symbolize_keys` из ActiveSupport в своём override
+  (gem его сам не предоставляет — Rails-приложение, где живёт `Concern`, и так его имеет).
 
 Если хост использует ActiveRecord/Ransack/discard, это подключается монкипатчем
 (`Module#prepend`) поверх классов gem'а — это код хоста, не gem'а:
@@ -510,7 +519,7 @@ module RansackIndexParams
   end
 
   def resource_index_params
-    q = deep_symbolize_keys(params[:q]&.to_unsafe_h) || {}
+    q = params[:q]&.to_unsafe_h&.deep_symbolize_keys || {}
     q[:s] ||= default_ordering if default_ordering
 
     { limit: params[:limit], limitless: params[:limitless], offset: params[:offset], q: }.compact
@@ -540,4 +549,3 @@ bundle exec rspec
 ## Roadmap
 
 - v1 - 1:1 перенос механизма (текущая версия).
-- v2 - декларативный DSL (`action_options:` с точечными переопределениями на action) -  см. проектную документацию.

@@ -86,8 +86,11 @@ RSpec.describe DefineSimpleAction::Concern do
       expect { controller_class.new.authorization_data }.to raise_error(NotImplementedError)
     end
 
-    it "raises NotImplementedError for #serialize_for_action by default" do
-      expect { controller_class.new.serialize_for_action("index", :result, {}) }.to raise_error(NotImplementedError)
+    it "raises NotImplementedError for #render_error by default (the actual required hook behind " \
+       "the default #serialize_for_action — see serialize_for_action_spec.rb)" do
+      failure_result = Struct.new(:failure?, :failure).new(true, { type: :invalid_record, errors: {} })
+
+      expect { controller_class.new.serialize_for_action("create", failure_result, {}) }.to raise_error(NotImplementedError)
     end
   end
 
@@ -193,17 +196,6 @@ RSpec.describe DefineSimpleAction::Concern do
 
       expect(controller.resource_show_params).to eq(id: 1)
       expect(controller.resource_show_by_slug_params).to eq(slug: "foo")
-    end
-  end
-
-  describe "#deep_symbolize_keys" do
-    it "is a public utility for host overrides (e.g. their own q: handling) — the gem itself no longer calls it" do
-      q = { "with_sites" => "true" }
-      q.define_singleton_method(:to_unsafe_h) { q }
-      controller = controller_class.new(params: {})
-
-      expect(controller.deep_symbolize_keys(q.to_unsafe_h)).to eq(with_sites: "true")
-      expect(controller.deep_symbolize_keys(nil)).to be_nil
     end
   end
 end
