@@ -3,11 +3,17 @@
 require 'json'
 
 # Дефолтная реализация Concern#serialize_for_action — резолвинг класса-сериализатора по
-# конвенции имён (как fetch_service_for_action резолвит сервис) плюс сборка формы ответа
-# по action'у ({data:, meta:} для index, {data: [id, ...]} для batch_destroy, {data:} для
-# остального). Опционально: подключается вместе с DefineSimpleAction::Concern, ничего не
+# конвенции имён (как fetch_service_for_action резолвит сервис) плюс диспетчеризация
+# success/failure. Опционально: подключается вместе с DefineSimpleAction::Concern, ничего не
 # меняет автоматически — сам Concern по-прежнему требует serialize_for_action на любом хосте,
 # который не подключил этот модуль.
+#
+# Форма ответа ({data:, meta:} для index, {data: [id, ...]} для batch_destroy или что угодно
+# ещё) — целиком зона сериализатора, а не gem'а: gem резолвит класс по имени action'а и
+# передаёт ему "сырое" значение результата (result.value!) как есть — IndexResponse
+# (data:/meta:) для index, массив снятых записей для batch_destroy, ресурс для остального.
+# Собрать финальный хэш ответа — дело конкретного Widgets::IndexSerializer/BatchDestroySerializer,
+# gem в это не вмешивается.
 #
 # Единственное место, которое знает о конкретной библиотеке сериализации — #render_resource.
 # Gem не зависит ни от Blueprinter, ни от любой другой — дефолт ожидает интерфейс
@@ -33,7 +39,7 @@ module DefineSimpleAction
       return encode_response(render_error(result.failure, options)) if result.failure?
       return if name == ::DefineSimpleAction::Concern::ACTION_DESTROY
 
-      encode_response(build_success_response(name, result, options))
+      encode_response(render_resource(fetch_serializer_class_for_action(name), result.value!, options))
     end
 
     protected
@@ -46,20 +52,6 @@ module DefineSimpleAction
     # Формат ошибок — целиком зона хоста, gem не имеет мнения (см. заголовок файла).
     def render_error(_failure, _options)
       raise NotImplementedError, "#{self.class} must implement #render_error"
-    end
-
-    def build_success_response(name, result, options)
-      case name
-      when ::DefineSimpleAction::Concern::ACTION_BATCH_DESTROY
-        { data: result.success.map(&:id) }
-      when ::DefineSimpleAction::Concern::ACTION_INDEX
-        {
-          data: render_resource(fetch_serializer_class_for_action(name), result.value!.data, options),
-          meta: result.value!.meta.to_h
-        }
-      else
-        { data: render_resource(fetch_serializer_class_for_action(name), result.value!, options) }
-      end
     end
 
     # Класс-сериализатор для action'а. Определяется:

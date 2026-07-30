@@ -372,9 +372,9 @@ end
 `serialize_for_action` в `DefineSimpleAction::Concern` — обязательный хук (`NotImplementedError`
 по умолчанию): gem сознательно не имеет мнения о сериализаторе. `DefineSimpleAction::SerializationConcern` —
 опциональный модуль (тот же принцип, что и `BaseServices` для сервисного слоя): даёт дефолтную
-реализацию `serialize_for_action`, резолвя класс-сериализатор по конвенции имён (как
-`fetch_service_for_action` резолвит сервис) и собирая форму ответа по action'у — но не
-привязываясь ни к какой конкретной библиотеке сериализации:
+реализацию `serialize_for_action`, которая резолвит класс-сериализатор по конвенции имён (как
+`fetch_service_for_action` резолвит сервис) и отдаёт ему результат как есть — но форму ответа
+(`{data:, meta:}`, `{data: ids}` или что угодно ещё) не решает вообще, это зона сериализатора:
 
 ```ruby
 class BrandsController < ApplicationController
@@ -403,18 +403,21 @@ class ApplicationService::Base
 end
 ```
 
-`object` — то, что нужно отрендерить: массив (`data` из `IndexResponse` для index-action'а) или
-одиночный ресурс (для остального). Gem не рендерит поэлементно — передаёт коллекцию как есть,
-как это делает `Blueprinter#render_as_json` сам по себе.
+`object` — это `result.value!` как есть, без разбора по action'у: `IndexResponse` целиком
+(`data:`/`meta:`) для index, массив снятых записей для batch_destroy, ресурс для остального.
+Итоговый хэш ответа (в т.ч. сам факт обёртки в `{data: ...}`, ключ `meta:` рядом с `data:`,
+`{data: ids}` вместо полной сериализации для batch_destroy) собирает сам резолвленный
+`Widgets::IndexSerializer`/`Widgets::BatchDestroySerializer`/... — то, что он вернёт из
+`render_resource`, целиком становится телом ответа. Gem никак не разбирает и не оборачивает
+этот результат — только резолвит класс и кодирует итог в JSON.
 
 ### Резолвинг класса-сериализатора — по конвенции, как у сервисов
 
-- в контроллере `set_serializer_name_for_#{name}` — вернуть имя класса строкой;
-- иначе конвенция `"#{prefix}::#{name.camelize}Serializer"` (тот же `prefix`, что резолвит
-  сервис).
-
-`batch_destroy`/`destroy` вообще не резолвят класс — `batch_destroy` строит `{data: ids}` из
-`result.success.map(&:id)`, `destroy` не имеет тела ответа.
+`set_serializer_name_for_#{name}` в контроллере — вернуть имя класса строкой; иначе конвенция
+`"#{prefix}::#{name.camelize}Serializer"` (тот же `prefix`, что резолвит сервис) — резолвится
+для **любого** action'а, включая `index`/`batch_destroy`: чтобы вернуть только id'шники в
+batch_destroy — решение самого `Widgets::BatchDestroySerializer`, а не gem'а. Исключение —
+`destroy`: тела ответа нет вообще, класс не резолвится.
 
 ### Ошибки — не в gem'е, как и везде
 
@@ -442,7 +445,7 @@ end
 - `encode_response(hash)` — опционален, дефолт — `JSON.generate` (Ruby stdlib, не Oj).
 - `fetch_serializer_for_#{name}` — полный обход всего вышеперечисленного: если определён,
   вызывается напрямую с `(result, service_params)` и его возврат становится телом ответа —
-  ни резолвинг класса, ни `render_error`, ни сборка `{data:, meta:}` не происходят.
+  ни резолвинг класса, ни `render_error`, ни вызов `render_resource` не происходят.
 
 ## Зависимости
 

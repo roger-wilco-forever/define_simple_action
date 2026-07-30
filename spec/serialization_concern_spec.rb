@@ -13,10 +13,6 @@ RSpec.describe DefineSimpleAction::SerializationConcern do
         payload
       end
 
-      def success
-        payload
-      end
-
       def failure
         payload
       end
@@ -47,12 +43,12 @@ RSpec.describe DefineSimpleAction::SerializationConcern do
   describe "#serialize_for_action — success" do
     before { stub_const("Widgets::ShowSerializer", serializer_class) }
 
-    it "resolves the serializer by `\#{prefix}::\#{name.camelize}Serializer` and wraps it in {data:}" do
+    it "resolves the serializer by `\#{prefix}::\#{name.camelize}Serializer` and encodes exactly what it returns — no {data:} wrapping of its own" do
       result = result_class.new(true, "a widget")
 
       json = controller.serialize_for_action("show", result, {})
 
-      expect(JSON.parse(json, symbolize_names: true)).to eq(data: { rendered: "a widget", options: {} })
+      expect(JSON.parse(json, symbolize_names: true)).to eq(rendered: "a widget", options: {})
     end
 
     it "lets `set_serializer_name_for_\#{name}` pick a different class" do
@@ -64,7 +60,7 @@ RSpec.describe DefineSimpleAction::SerializationConcern do
       result = result_class.new(true, "a widget")
       json = controller.serialize_for_action("show", result, {})
 
-      expect(JSON.parse(json, symbolize_names: true)).to eq(data: { rendered: "a widget", options: {} })
+      expect(JSON.parse(json, symbolize_names: true)).to eq(rendered: "a widget", options: {})
     end
 
     it "passes #serializer_options through to #render_resource" do
@@ -76,30 +72,39 @@ RSpec.describe DefineSimpleAction::SerializationConcern do
       json = controller.serialize_for_action("show", result, { q: { title_cont: "foo" } })
 
       expect(JSON.parse(json, symbolize_names: true)).to eq(
-        data: { rendered: "a widget", options: { q: { title_cont: "foo" } } }
+        rendered: "a widget", options: { q: { title_cont: "foo" } }
       )
     end
   end
 
-  describe "#serialize_for_action — DefineSimpleAction::Concern::ACTION_INDEX" do
+  describe "#serialize_for_action — response shape is entirely the serializer's job, gem doesn't special-case it" do
     let(:index_response_class) { Struct.new(:data, :meta) }
 
-    it "builds {data:, meta:} from the IndexResponse, rendering the whole collection in one #render_resource call" do
-      stub_const("Widgets::IndexSerializer", serializer_class)
+    it "for ACTION_INDEX, passes the whole IndexResponse (data:/meta:) to the resolved serializer as-is" do
+      index_serializer = Class.new do
+        def self.call(index_response, _options)
+          { data: index_response.data, meta: index_response.meta }
+        end
+      end
+      stub_const("Widgets::IndexSerializer", index_serializer)
       response = index_response_class.new(%w[a b], { count: 2, limit: 10, offset: 0 })
       result = result_class.new(true, response)
 
       json = controller.serialize_for_action(::DefineSimpleAction::Concern::ACTION_INDEX, result, {})
 
       expect(JSON.parse(json, symbolize_names: true)).to eq(
-        data: { rendered: %w[a b], options: {} },
+        data: %w[a b],
         meta: { count: 2, limit: 10, offset: 0 }
       )
     end
-  end
 
-  describe "#serialize_for_action — DefineSimpleAction::Concern::ACTION_BATCH_DESTROY" do
-    it "returns {data: ids} from #success, without resolving any serializer class" do
+    it "for ACTION_BATCH_DESTROY, resolves a serializer by convention too — an ids-only response is the host's choice, not the gem's" do
+      batch_destroy_serializer = Class.new do
+        def self.call(records, _options)
+          { data: records.map(&:id) }
+        end
+      end
+      stub_const("Widgets::BatchDestroySerializer", batch_destroy_serializer)
       records = [Struct.new(:id).new(1), Struct.new(:id).new(2)]
       result = result_class.new(true, records)
 
@@ -137,7 +142,7 @@ RSpec.describe DefineSimpleAction::SerializationConcern do
   end
 
   describe "`fetch_serializer_for_\#{name}` — full escape hatch" do
-    it "bypasses serializer resolution, error handling and response-shape building entirely" do
+    it "bypasses serializer resolution, error handling and rendering entirely" do
       def controller.fetch_serializer_for_index(result, _service_params)
         "custom #{result.value!}"
       end
@@ -164,7 +169,7 @@ RSpec.describe DefineSimpleAction::SerializationConcern do
       result = result_class.new(true, "a widget")
       json = controller.serialize_for_action("show", result, {})
 
-      expect(JSON.parse(json, symbolize_names: true)).to eq(data: { blueprinter: "a widget", options: {} })
+      expect(JSON.parse(json, symbolize_names: true)).to eq(blueprinter: "a widget", options: {})
     end
   end
 end
