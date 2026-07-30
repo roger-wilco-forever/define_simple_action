@@ -2,12 +2,13 @@
 
 module DefineSimpleAction
   module Concern
-    # Дефолтные <tt>resource_#{action}_params</tt> по конвенции CRUD_ACTION_DATA
-    # (deep_symbolize_keys вместо ActiveSupport). Никакого Ransack — как и в BaseServices
-    # (см. README, "ActiveRecord/Ransack/discard — не в gem'е вообще"): <tt>q:</tt> здесь —
-    # нейтральный контейнер для произвольных query-параметров, который gem просто
-    # прокидывает дальше символизированным, не придавая ему ransack-семантики (сортировка,
-    # `.ransack(...)` и т.д. — целиком дело хоста, как и `prepare_query` в IndexService).
+    # Дефолтные <tt>resource_#{action}_params</tt> по конвенции CRUD_ACTION_DATA. Никакого
+    # <tt>q:</tt>/Ransack — как и в BaseServices (см. README, "ActiveRecord/Ransack/discard —
+    # не в gem'е вообще"): ни один сервис gem'а не читает <tt>params[:q]</tt> сам
+    # (`IndexService#prepare_query`/`ShowService#execute`/`ShowBySlugService#execute` —
+    # обычный `scope(params)`/`find`, без `.ransack`), так что строить и прокидывать
+    # <tt>q:</tt> здесь незачем — хост, которому нужен фильтр/сортировка/ассоциации,
+    # добавляет свой <tt>q:</tt> в собственном override (см. README).
     module ResourceParams
       def resource_batch_destroy_params
         { ids: params[:ids] }
@@ -25,23 +26,16 @@ module DefineSimpleAction
         {
           limit: params[:limit],
           limitless: params[:limitless],
-          offset: params[:offset],
-          q: deep_symbolize_keys(params[:q]&.to_unsafe_h)
+          offset: params[:offset]
         }.compact
       end
 
       def resource_show_by_slug_params
-        {
-          q: deep_symbolize_keys(params[:q]&.to_unsafe_h),
-          slug: params[:slug]
-        }.compact
+        { slug: params[:slug] }.compact
       end
 
       def resource_show_params
-        {
-          id: Integer(params[:id]),
-          q: deep_symbolize_keys(params[:q]&.to_unsafe_h)
-        }.compact
+        { id: Integer(params[:id]) }
       end
 
       def resource_update_params
@@ -49,7 +43,9 @@ module DefineSimpleAction
       end
 
       # dry-transformer вместо ActiveSupport Hash#deep_symbolize_keys; сам метод не
-      # принимает nil, поэтому оборачиваем (params[:q] нередко отсутствует).
+      # принимает nil. Сам gem его не использует нигде в resource_#{action}_params
+      # (см. выше) — оставлен как утилита для хостовых override'ов (например, q:
+      # в собственном resource_index_params, см. README).
       def deep_symbolize_keys(value)
         return value if value.nil?
 

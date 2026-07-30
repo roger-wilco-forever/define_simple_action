@@ -472,10 +472,12 @@ Gem не зависит от Rails/ActiveSupport — только dry-rb (`dry-m
 - `IndexService#prepare_query` по умолчанию — просто `scope(params)`, без вызова `#ransack`.
 - `Create/Update/BatchDestroyService` не перехватывают вообще никаких исключений — что
   бы ни бросил `#create_resource`/`model.find`/`destroy_all`, оно пробрасывается наружу как есть.
-- `Concern#resource_index_params` тоже без Ransack: `q:` — нейтральный контейнер
-  (`deep_symbolize_keys(params[:q]&.to_unsafe_h)`), без автоподстановки сортировки
-  (`q[:s] ||= "id asc"`) и без метода с говорящим именем `compacted_ransack_params` —
-  gem его прокидывает как есть, ничего не зная про Ransack-синтаксис сортировки/фильтрации.
+- `Concern#resource_index_params`/`#resource_show_params`/`#resource_show_by_slug_params` не
+  строят `q:` вообще: ни один сервис gem'а (`IndexService#prepare_query`, `ShowService#execute`,
+  `ShowBySlugService#execute`) сам `params[:q]` не читает — `q:` (и тем более Ransack-конвенция
+  сортировки `q[:s]`) нужен только тем хостам, которые сами подключили Ransack/фильтрацию, так
+  что строить и прокидывать пустой контейнер незачем. `#deep_symbolize_keys` остаётся публичной
+  утилитой — пригодится в собственном override хоста (см. пример ниже).
 
 Если хост использует ActiveRecord/Ransack/discard, это подключается монкипатчем
 (`Module#prepend`) поверх классов gem'а — это код хоста, не gem'а:
