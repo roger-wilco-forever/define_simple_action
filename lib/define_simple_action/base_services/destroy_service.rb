@@ -27,15 +27,15 @@ module DefineSimpleAction
       private
 
       def attempt_removal(resource)
-        remove_resource(resource) ? Success({ resource: }) : Failure({ resource: })
+        remove_resource(resource) ? Success(resource) : Failure(resource)
       end
 
       def on_failure(record)
-        Failure(type: :invalid_record, errors: ::DefineSimpleAction.deep_dup(record[:resource].errors.messages))
+        Failure(type: :invalid_record, errors: ::DefineSimpleAction.deep_dup(record.errors.messages))
       end
 
       def on_success(record)
-        record[:resource]
+        record
       end
     end
   end

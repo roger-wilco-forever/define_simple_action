@@ -47,6 +47,7 @@ module DefineSimpleAction
         limitless = cast_boolean(params[:limitless])
         limit = limitless ? nil : (params[:limit] || self.class::PAGE_LENGTH).to_i
         offset = params[:offset].to_i
+
         [limitless, limit, offset]
       end
 
