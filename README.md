@@ -67,15 +67,17 @@ end
 SomeService.new(
   authorization_data: authorization_data,     # результат хука #authorization_data
   model: model_name,                          # строка или класс, переданный в define_simple_actions
-  notify_data: notify_data,                   # то, что передали в define_simple_actions (см. ниже)
-  validation_contract_name: "..."             # см. #fetch_validation_contract_name_for_action
-)
+  validation_contract_name: "...",            # см. #fetch_validation_contract_name_for_action
+  **options                                   # всё, что передали в define_simple_actions сверх
+)                                              # actions:/model_name:/response_formats: (см. ниже)
 ```
 
-`notify_data:` concern передаёт нейтрально (просто прокидывает то, что дали в
-`define_simple_actions(notify_data: ...)`) и никак не интерпретирует. `BaseServices::BaseService`
+`options` concern передаёт нейтрально (просто прокидывает то, что дали в
+`define_simple_actions(notify_data: ..., use_cache: ..., ...)`) и никак не интерпретирует —
+gem не знает имён `notify_data`/`use_cache`/`cache_expires_in` и любых других. `BaseServices::BaseService`
 тоже не объявляет `option :notify_data` и не знает про `notify` — это целиком зона хоста, см.
-раздел "Notify — не в gem'е" ниже.
+раздел "Notify — не в gem'е" ниже. Сервис подхватывает из `options` только то, что сам объявил
+через dry-initializer `option` — незаявленные kwargs dry-initializer молча игнорирует.
 
 Сервис должен отвечать на `#call(params)`, возвращая объект с `#failure?` (контракт
 Result/dry-monads: `Success`/`Failure`).
@@ -126,9 +128,10 @@ end
 Опциональные (есть дефолт, который можно переопределить):
 
 - `around_action_execution(**opts) { ... }` — оборачивает вызов сервиса + сериализацию;
-  сюда попадают `name:`, `model_name:`, `service_params:`, `use_cache:`, `cache_expires_in:`
-  из вызова `define_simple_actions`/`define_simple_action`. Дефолт — просто `yield`.
-  Используется, например, для кэширования результата.
+  сюда попадают `name:`, `model_name:`, `service_params:` и `options:` — хэш всего, что
+  передали в `define_simple_actions` сверх `actions:`/`model_name:`/`response_formats:`
+  (например, `use_cache:`/`cache_expires_in:`, если хост их придумал). Дефолт — просто
+  `yield`. Используется, например, для кэширования результата.
 - `fallback_service_namespace` — неймспейс, куда падает резолвинг сервиса, если
   `"#{prefix}::FooService"` не существует. Дефолт — `nil` (фоллбэка нет, `NameError`
   пробрасывается наружу).

@@ -27,17 +27,20 @@ module DefineSimpleAction
       # * в контроллере <tt>fetch_service_for_#{name}</tt>
       # * создать класс <tt>"#{prefix}::#{name.camelize}Service"</tt>, prefix — <tt>class.name.delete_suffix('Controller')</tt>
       #
-      # Сервис инстанцируется сkwargs <tt>authorization_data:, model:, notify_data:, validation_contract_name:</tt> —
-      # это ожидаемый контракт конструктора сервиса.
-      def fetch_service_for_action(name, model_name, notify_data)
+      # Сервис инстанцируется kwargs <tt>authorization_data:, model:, validation_contract_name:</tt>
+      # плюс <tt>options</tt> целиком (см. ClassMethods#define_simple_actions — например,
+      # <tt>notify_data:</tt>, если хост его передал) — gem их не знает, конкретный сервис
+      # подхватывает то, что ему нужно, через dry-initializer <tt>option</tt> (незаявленные
+      # kwargs dry-initializer молча игнорирует).
+      def fetch_service_for_action(name, model_name, options = {})
         method_name = :"fetch_service_for_#{name}"
         return __send__(method_name) if respond_to?(method_name, true)
 
         service_params = {
           authorization_data:,
           model: model_name.is_a?(String) ? ::DefineSimpleAction.constantize(model_name) : model_name,
-          notify_data:,
-          validation_contract_name: fetch_validation_contract_name_for_action(name)
+          validation_contract_name: fetch_validation_contract_name_for_action(name),
+          **options
         }.compact
 
         camelized_name = ::DefineSimpleAction::INFLECTOR.camelize(name)

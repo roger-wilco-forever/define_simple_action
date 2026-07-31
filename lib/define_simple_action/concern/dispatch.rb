@@ -13,15 +13,18 @@ module DefineSimpleAction
       # Точка входа, на которую ссылаются action-методы, определённые ClassMethods#define_simple_actions.
       # 406 (<tt>:not_acceptable</tt>), если формат запроса не в <tt>response_formats</tt>;
       # иначе — params → сервис+сериализация (обёрнутые в #around_action_execution) → рендер
-      # через <tt>make_response_#{format}</tt> для каждого запрошенного формата.
-      def define_simple_action(name, model_name, response_formats, notify_data, use_cache, cache_expires_in) # rubocop:disable Metrics/ParameterLists
+      # через <tt>make_response_#{format}</tt> для каждого запрошенного формата. <tt>options</tt> —
+      # хэш всего, что передали в <tt>define_simple_actions</tt> сверх <tt>actions:</tt>/
+      # <tt>model_name:</tt>/<tt>response_formats:</tt> (<tt>use_cache:</tt>, <tt>notify_data:</tt>
+      # и т.д.) — gem его не разбирает, просто прокидывает целиком дальше.
+      def define_simple_action(name, model_name, response_formats, options)
         return head :not_acceptable unless response_formats.include?(request.format.symbol)
 
         service_params = fetch_params_for_action(name)
 
         serialized_result, status = around_action_execution(
-          name:, model_name:, service_params:, use_cache:, cache_expires_in:
-        ) { fetch_serialized_result_and_status(name, model_name, service_params, notify_data) }
+          name:, model_name:, service_params:, options:
+        ) { fetch_serialized_result_and_status(name, model_name, service_params, options) }
 
         respond_to do |format|
           response_formats.each do |response_format|
@@ -33,8 +36,8 @@ module DefineSimpleAction
       # Резолвит и вызывает сервис (см. Resolution#fetch_service_for_action), затем
       # сериализует результат и резолвит HTTP-статус — пара <tt>[serialized_result, status]</tt>,
       # которую #define_simple_action передаёт в <tt>make_response_#{format}</tt>.
-      def fetch_serialized_result_and_status(name, model_name, service_params, notify_data)
-        result = fetch_service_for_action(name, model_name, notify_data).call(service_params)
+      def fetch_serialized_result_and_status(name, model_name, service_params, options)
+        result = fetch_service_for_action(name, model_name, options).call(service_params)
 
         [serialize_for_action(name, result, service_params), fetch_status_for_action(name, result)]
       end

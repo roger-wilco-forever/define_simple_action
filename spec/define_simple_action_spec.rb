@@ -56,7 +56,14 @@ RSpec.describe DefineSimpleAction::Concern do
   let(:index_service_class) do
     result = service_result
 
+    # Игнорирует незаявленные kwargs, как dry-initializer в реальных BaseServices — сервис
+    # подхватывает только то, что сам объявил, остальное из options пролетает мимо (см.
+    # Resolution#fetch_service_for_action).
     Struct.new(:authorization_data, :model, :notify_data, :validation_contract_name, keyword_init: true) do
+      def initialize(**kwargs)
+        super(**kwargs.slice(*members))
+      end
+
       define_method(:call) { |_params| result }
     end
   end
@@ -78,6 +85,20 @@ RSpec.describe DefineSimpleAction::Concern do
       controller_class.define_simple_actions(actions: %i[index], model_name: "Widget")
 
       expect(controller_class.new.index).to eq(:custom_index)
+    end
+
+    it "collects anything beyond actions:/model_name:/response_formats: into options — gem doesn't " \
+       "know use_cache:/cache_expires_in:/notify_data: by name, it's all one opaque hash for the host" do
+      received = nil
+      controller_class.class_eval do
+        define_method(:define_simple_action) { |_name, _model_name, _response_formats, options| received = options }
+      end
+      controller_class.define_simple_actions(actions: %i[index], model_name: "Widget",
+                                              use_cache: true, notify_data: { watch_keys: [:title] })
+
+      controller_class.new.index
+
+      expect(received).to eq(use_cache: true, notify_data: { watch_keys: [:title] })
     end
   end
 
@@ -116,7 +137,7 @@ RSpec.describe DefineSimpleAction::Concern do
     before { stub_const("Widgets::IndexService", index_service_class) }
 
     it "resolves the service by `\#{prefix}::\#{action.camelize}Service` and renders json" do
-      controller.define_simple_action("index", model_class, %i[json], nil, false, nil)
+      controller.define_simple_action("index", model_class, %i[json], {})
 
       expect(controller.rendered).to eq(json: { data: service_result }, status: :ok)
     end
@@ -124,7 +145,7 @@ RSpec.describe DefineSimpleAction::Concern do
     it "responds with 406 when the request format is not in response_formats" do
       controller.format_symbol = :xml
 
-      controller.define_simple_action("index", model_class, %i[json], nil, false, nil)
+      controller.define_simple_action("index", model_class, %i[json], {})
 
       expect(controller.head_status).to eq(:not_acceptable)
       expect(controller.rendered).to be_nil
@@ -140,7 +161,7 @@ RSpec.describe DefineSimpleAction::Concern do
         "Base"
       end
 
-      controller.define_simple_action("index", model_class, %i[json], nil, false, nil)
+      controller.define_simple_action("index", model_class, %i[json], {})
 
       expect(controller.rendered).to eq(json: { data: service_result }, status: :ok)
     end
@@ -151,20 +172,20 @@ RSpec.describe DefineSimpleAction::Concern do
       end
 
       expect do
-        controller.define_simple_action("index", model_class, %i[json], nil, false, nil)
+        controller.define_simple_action("index", model_class, %i[json], {})
       end.to raise_error(NameError)
     end
 
-    it "passes use_cache/cache_expires_in through to around_action_execution" do
+    it "passes options (use_cache/cache_expires_in/notify_data/anything else) through to around_action_execution as one hash" do
       received = nil
       controller.define_singleton_method(:around_action_execution) do |**kwargs, &block|
         received = kwargs
         block.call
       end
 
-      controller.define_simple_action("index", model_class, %i[json], nil, true, 42)
+      controller.define_simple_action("index", model_class, %i[json], { use_cache: true, cache_expires_in: 42 })
 
-      expect(received).to include(use_cache: true, cache_expires_in: 42, model_name: model_class)
+      expect(received).to include(options: { use_cache: true, cache_expires_in: 42 }, model_name: model_class)
     end
   end
 

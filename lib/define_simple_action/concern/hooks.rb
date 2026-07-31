@@ -17,7 +17,17 @@ module DefineSimpleAction
       end
 
       # Оборачивает вызов сервиса + сериализацию (например, кэшем и/или APM-спаном).
-      # Дефолт — без обёртки.
+      # Дефолт — без обёртки. Получает <tt>name:</tt>/<tt>model_name:</tt>/<tt>service_params:</tt>
+      # и <tt>options:</tt> — хэш всего, что передали в <tt>define_simple_actions</tt> сверх
+      # <tt>actions:</tt>/<tt>model_name:</tt>/<tt>response_formats:</tt> (например,
+      # <tt>use_cache:</tt>/<tt>cache_expires_in:</tt>) — gem эти ключи не знает, интерпретация
+      # целиком на хосте:
+      #
+      #   def around_action_execution(options:, **)
+      #     return yield unless options[:use_cache]
+      #
+      #     Rails.cache.fetch(cache_key, expires_in: options[:cache_expires_in]) { yield }
+      #   end
       def around_action_execution(**)
         yield
       end
